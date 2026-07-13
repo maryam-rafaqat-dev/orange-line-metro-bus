@@ -1,11 +1,4 @@
-/* ═══════════════════════════════════════════════════════════
-   ORANGE LINE METRO BUS — v16 (DYNAMIC CONFIG VERSION)
-   Saara data (stops, ticker, timing, header text, colors) ab
-   config.json se load hota hai — agar user ne Settings page se
-   kabhi changes save kiye hon, wo localStorage se aate hain
-   (config.json se zyada priority ke sath). Isse future me
-   content change karne ke liye is file ko chhoona nahi padta.
-═══════════════════════════════════════════════════════════ */
+
 
 const LOCAL_STORAGE_KEY = 'metroConfigOverride';
 
@@ -23,14 +16,6 @@ async function loadConfig(){
 
 let CONFIG = null;   /* poori app ke liye globally available, loadConfig() ke baad set hota hai */
 
-/* ═══════════════════════════════════════════════════════════
-   AUTO-FIT TO SCREEN — TV, tablet, ya mobile, koi bhi ho
-   #app hamesha 1920×1080 par design hota hai; yahan hum screen
-   ke hisaab se usay uniformly scale karte hain taake POORI
-   screen edge-to-edge fill ho jaye (koi khali/black bars nahi) —
-   design ka proportion wahi rehta hai, bas size device ke
-   mutabiq adjust ho jata hai.
-═══════════════════════════════════════════════════════════ */
 function fitToScreen(){
   const app = document.getElementById('app');
   if(!app) return;
