@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ur">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings — Orange Line Metro Bus</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;}
+  body{margin:0;font-family:Arial,sans-serif;background:#F4F3F1;color:#222;padding-bottom:80px;}
+  header{background:#E8620A;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+  header h1{font-size:18px;margin:0;}
+  header a{color:#fff;text-decoration:none;font-size:14px;background:rgba(255,255,255,.2);padding:8px 14px;border-radius:8px;}
+  .wrap{max-width:760px;margin:0 auto;padding:16px;}
+  section{background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+  section h2{font-size:16px;margin:0 0 12px;color:#E8620A;border-bottom:2px solid #FFD4A8;padding-bottom:8px;}
+  label{display:block;font-size:12px;font-weight:700;color:#666;margin-bottom:4px;margin-top:10px;}
+  input[type=text],input[type=number]{width:100%;padding:10px;border:1px solid #DDD;border-radius:8px;font-size:14px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .item{border:1px solid #EEE;border-radius:10px;padding:12px;margin-bottom:10px;position:relative;background:#FAFAFA;}
+  .item .del{position:absolute;top:8px;right:8px;background:#CC1000;color:#fff;border:none;border-radius:6px;width:26px;height:26px;font-size:14px;cursor:pointer;}
+  .add-btn{width:100%;padding:10px;background:#FFF3E8;border:2px dashed #E8620A;color:#E8620A;border-radius:8px;font-weight:700;cursor:pointer;margin-top:6px;}
+  .fare-check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;font-weight:700;color:#666;}
+  .fare-check input{width:auto;}
+  .actions{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #EEE;padding:12px 16px;display:flex;gap:10px;box-shadow:0 -2px 10px rgba(0,0,0,.08);}
+  .actions button{flex:1;padding:14px;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;}
+  #saveBtn{background:#16A34A;color:#fff;}
+  #resetBtn{background:#EEE;color:#555;}
+  .toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;}
+  .toast.show{opacity:1;}
+  .hint{font-size:12px;color:#999;margin-top:-6px;margin-bottom:8px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚙ Display Settings</h1>
+  <a href="index.html">← Back to Display</a>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <h2>Header / Title</h2>
+    <label>English Title</label>
+    <input type="text" id="cfg-titleEn">
+    <label>Route — Urdu (From)</label>
+    <input type="text" id="cfg-routeFromUr" dir="rtl">
+    <label>Route — Urdu (To)</label>
+    <input type="text" id="cfg-routeToUr" dir="rtl">
+  </section>
+
+  <section>
+    <h2>Timing</h2>
+    <div class="row2">
+      <div>
+        <label>Minutes per stop</label>
+        <input type="number" id="cfg-minPerStop">
+      </div>
+      <div>
+        <label>Bus slide speed (ms, kam = tez)</label>
+        <input type="number" id="cfg-slideToNext">
+      </div>
+      <div>
+        <label>Wait at station (ms)</label>
+        <input type="number" id="cfg-waitAtStation">
+      </div>
+      <div>
+        <label>Ticker scroll speed</label>
+        <input type="number" id="cfg-tickerSpeed">
+      </div>
+    </div>
+    <label>Forward trip — first departure (24hr)</label>
+    <div class="row2">
+      <input type="number" id="cfg-fwdH" placeholder="Hour" min="0" max="23">
+      <input type="number" id="cfg-fwdM" placeholder="Minute" min="0" max="59">
+    </div>
+    <label>Return trip — first departure (24hr)</label>
+    <div class="row2">
+      <input type="number" id="cfg-revH" placeholder="Hour" min="0" max="23">
+      <input type="number" id="cfg-revM" placeholder="Minute" min="0" max="59">
+    </div>
+  </section>
+
+  <section>
+    <h2>Stops (Route)</h2>
+    <div class="hint">Bus isi order me chalega — pehla stop = start, aakhri = destination.</div>
+    <div id="stopsList"></div>
+    <button class="add-btn" onclick="addStop()">+ Add Stop</button>
+  </section>
+
+  <section>
+    <h2>Ticker Messages</h2>
+    <div id="tickerList"></div>
+    <button class="add-btn" onclick="addTicker()">+ Add Ticker Message</button>
+  </section>
+
+</div>
+
+<div class="actions">
+  <button id="resetBtn" onclick="resetDefaults()">Reset to Defaults</button>
+  <button id="saveBtn" onclick="saveConfig()">💾 Save Changes</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const LOCAL_STORAGE_KEY = 'metroConfigOverride';
+let cfg = null;
+
+async function loadConfig(){
+  const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+  if (saved) { try { return JSON.parse(saved); } catch(e){} }
+  const res = await fetch('config.json');
+  return await res.json();
+}
+
+function render(){
+  document.getElementById('cfg-titleEn').value = cfg.header.titleEn;
+  document.getElementById('cfg-routeFromUr').value = cfg.header.routeFromUr;
+  document.getElementById('cfg-routeToUr').value = cfg.header.routeToUr;
+
+  document.getElementById('cfg-minPerStop').value = cfg.timing.minPerStop;
+  document.getElementById('cfg-slideToNext').value = cfg.timing.slideToNext;
+  document.getElementById('cfg-waitAtStation').value = cfg.timing.waitAtStation;
+  document.getElementById('cfg-tickerSpeed').value = cfg.timing.tickerSpeed;
+  document.getElementById('cfg-fwdH').value = cfg.timing.fwdFirstDep.h;
+  document.getElementById('cfg-fwdM').value = cfg.timing.fwdFirstDep.m;
+  document.getElementById('cfg-revH').value = cfg.timing.revFirstDep.h;
+  document.getElementById('cfg-revM').value = cfg.timing.revFirstDep.m;
+
+  const stopsList = document.getElementById('stopsList');
+  stopsList.innerHTML = '';
+  cfg.stops.forEach((s,i)=>{
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `
+      <button class="del" onclick="removeStop(${i})">✕</button>
+      <label>Stop ${i+1} — English Name</label>
+      <input type="text" value="${escapeAttr(s.en)}" onchange="cfg.stops[${i}].en=this.value">
+      <label>Stop ${i+1} — Urdu Name</label>
+      <input type="text" dir="rtl" value="${escapeAttr(s.ur)}" onchange="cfg.stops[${i}].ur=this.value">
+    `;
+    stopsList.appendChild(div);
+  });
+
+  const tickerList = document.getElementById('tickerList');
+  tickerList.innerHTML = '';
+  cfg.ticker.forEach((t,i)=>{
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `
+      <button class="del" onclick="removeTicker(${i})">✕</button>
+      <div class="row3">
+        <div><label>Icon (emoji)</label><input type="text" value="${escapeAttr(t.ic)}" onchange="cfg.ticker[${i}].ic=this.value"></div>
+        <div><label>Number/Code</label><input type="text" value="${escapeAttr(t.num)}" onchange="cfg.ticker[${i}].num=this.value"></div>
+        <div class="fare-check"><input type="checkbox" ${t.fare?'checked':''} onchange="cfg.ticker[${i}].fare=this.checked"> Highlight (fare/alert style)</div>
+      </div>
+      <label>Urdu Text</label>
+      <input type="text" dir="rtl" value="${escapeAttr(t.ur)}" onchange="cfg.ticker[${i}].ur=this.value">
+      <label>English Text</label>
+      <input type="text" value="${escapeAttr(t.en)}" onchange="cfg.ticker[${i}].en=this.value">
+    `;
+    tickerList.appendChild(div);
+  });
+}
+
+function escapeAttr(s){
+  return String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+
+function addStop(){
+  cfg.stops.push({en:'New Station', ur:'نیا اسٹیشن'});
+  render();
+}
+function removeStop(i){
+  if(cfg.stops.length<=2){ showToast('Kam se kam 2 stops zaroori hain'); return; }
+  cfg.stops.splice(i,1);
+  render();
+}
+function addTicker(){
+  cfg.ticker.push({ic:'📢', ur:'نیا پیغام', num:'', en:'New message', fare:false});
+  render();
+}
+function removeTicker(i){
+  cfg.ticker.splice(i,1);
+  render();
+}
+
+function collectFormValues(){
+  cfg.header.titleEn     = document.getElementById('cfg-titleEn').value;
+  cfg.header.routeFromUr = document.getElementById('cfg-routeFromUr').value;
+  cfg.header.routeToUr   = document.getElementById('cfg-routeToUr').value;
+
+  cfg.timing.minPerStop    = Number(document.getElementById('cfg-minPerStop').value) || 5;
+  cfg.timing.slideToNext   = Number(document.getElementById('cfg-slideToNext').value) || 1500;
+  cfg.timing.waitAtStation = Number(document.getElementById('cfg-waitAtStation').value) || 3000;
+  cfg.timing.tickerSpeed   = Number(document.getElementById('cfg-tickerSpeed').value) || 25;
+  cfg.timing.fwdFirstDep.h = Number(document.getElementById('cfg-fwdH').value) || 0;
+  cfg.timing.fwdFirstDep.m = Number(document.getElementById('cfg-fwdM').value) || 0;
+  cfg.timing.revFirstDep.h = Number(document.getElementById('cfg-revH').value) || 0;
+  cfg.timing.revFirstDep.m = Number(document.getElementById('cfg-revM').value) || 0;
+}
+
+function saveConfig(){
+  collectFormValues();
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cfg));
+  showToast('✅ Saved! Display page par jaa kar refresh karein.');
+}
+
+async function resetDefaults(){
+  localStorage.removeItem(LOCAL_STORAGE_KEY);
+  const res = await fetch('config.json');
+  cfg = await res.json();
+  render();
+  showToast('Defaults restore ho gaye (abhi tak save nahi hue)');
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+(async function init(){
+  cfg = await loadConfig();
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+{
+  "header": {
+    "titleEn": "ORANGE LINE METRO BUS SERVICE — ISLAMABAD",
+    "routeFromUr": "فیض احمد فیض اسٹیشن",
+    "routeToUr": "اسلام آباد انٹرنیشنل ایئرپورٹ"
+  },
+
+  "timing": {
+    "minPerStop": 5,
+    "waitAtStation": 3000,
+    "slideToNext": 1500,
+    "tickerSpeed": 25,
+    "fwdFirstDep": { "h": 6, "m": 0 },
+    "revFirstDep": { "h": 6, "m": 35 },
+    "tripGap": 5
+  },
+
+  "colors": {
+    "orange": "#E8620A",
+    "orangeLight": "#FF8C33",
+    "orangeDark": "#B54800",
+    "red": "#CC1000",
+    "green": "#16A34A",
+    "greenLight": "#22C55E",
+    "blue": "#004D99",
+    "dest": "#4F46E5",
+    "lineOrangeStart": "#FF6B00",
+    "lineOrangeEnd": "#CC1000"
+  },
+
+  "stops": [
+    { "en": "Faiz Ahmed Faiz Station",         "ur": "فیض احمد فیض اسٹیشن" },
+    { "en": "NHA Station",                     "ur": "این ایچ اے اسٹیشن" },
+    { "en": "G-10 Station",                    "ur": "جی ٹین اسٹیشن" },
+    { "en": "Police Foundation",               "ur": "پولیس فاؤنڈیشن" },
+    { "en": "NUST Station",                    "ur": "نسٹ اسٹیشن" },
+    { "en": "Golra Morr",                      "ur": "گولڑہ موڑ" },
+    { "en": "Islamabad International Airport", "ur": "اسلام آباد انٹرنیشنل ایئرپورٹ" }
+  ],
+
+  "ticker": [
+    { "ic": "🚨", "ur": "ہنگامی مدد",                    "num": "1122",        "en": "Emergency Help",                         "fare": false },
+    { "ic": "👮", "ur": "پولیس",                          "num": "15",          "en": "Police",                                 "fare": false },
+    { "ic": "🎫", "ur": "نوٹس: ٹکٹ 6 جولائی سے 50 روپے",  "num": "Rs 50",       "en": "Notice: Ticket price Rs 50 from 6-July", "fare": true  },
+    { "ic": "🩺", "ur": "ایمبولینس",                      "num": "1122",        "en": "Ambulance",                              "fare": false },
+    { "ic": "😡", "ur": "ہراسانی شکایت",                  "num": "1099",        "en": "Harassment Helpline",                    "fare": false },
+    { "ic": "🚌", "ur": "میٹرو ہیلپ لائن",                "num": "051-9260874", "en": "Metro Helpline",                         "fare": false },
+    { "ic": "📢", "ur": "6 جولائی کے بعد مفت سفر ختم",    "num": "",            "en": "Free service ends 6 July",               "fare": true  },
+    { "ic": "🔥", "ur": "فائر بریگیڈ",                    "num": "16",          "en": "Fire Brigade",                           "fare": false },
+    { "ic": "📋", "ur": "سی ڈی اے شکایت",                "num": "051-9252626", "en": "CDA Complaint",                          "fare": false },
+    { "ic": "💬", "ur": "فیڈبیک ایس ایم ایس",             "num": "8500",        "en": "Feedback SMS",                           "fare": false },
+    { "ic": "🏥", "ur": "سرکاری ہسپتال",                  "num": "051-9260871", "en": "Govt Hospital",                          "fare": false }
+  ]
+}
