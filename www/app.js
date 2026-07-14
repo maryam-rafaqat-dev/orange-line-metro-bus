@@ -301,6 +301,124 @@ function applyColors(){
 }
 
 /* ════════════════════════════════════════
+   LIVE MODE — real backend data via liveFeed.js
+   ────────────────────────────────────────
+   When CONFIG.backend.enabled is true, the display is driven by the vehicle's
+   real position instead of the local simulation (runCycle). liveFeed.js does
+   the networking and hands us a normalized snapshot; the functions below map
+   that snapshot onto the SAME render layer the simulation uses (renderWindow /
+   updateCards / the bus overlay), so nothing in the GUI changes.
+
+   Resilience rule: the simulation is a fallback ONLY when the backend is
+   unconfigured or never becomes live. Once we have shown real data, a later
+   drop surfaces a status badge and freezes the last real state — we never
+   silently animate a fake bus, which would mislead passengers.
+════════════════════════════════════════ */
+let liveEverLive = false;   /* have we ever rendered a real snapshot? */
+let liveBusPlaced = false;  /* first bus placement snaps; later ones slide */
+let liveGraceTimer = null;
+
+function ensureLiveBadge(){
+  let el = document.getElementById('live-badge');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'live-badge';
+    el.style.cssText =
+      'position:fixed;left:14px;bottom:14px;z-index:9999;padding:4px 10px;'+
+      'border-radius:12px;font:600 12px/1 Arial,sans-serif;color:#fff;'+
+      'letter-spacing:.5px;opacity:.85;transition:background .3s;';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function setLiveStatus(status){
+  const el = ensureLiveBadge();
+  const map = {
+    connecting: ['CONNECTING', '#6B7280'],
+    live:       ['● LIVE',      '#16A34A'],
+    stale:      ['STALE',       '#B54800'],
+    offline:    ['OFFLINE',     '#CC1000']
+  };
+  const [txt, bg] = map[status] || map.offline;
+  el.textContent = txt;
+  el.style.background = bg;
+}
+
+/* Map one normalized snapshot onto the existing render globals + layer. */
+function applyLiveState(state){
+  if(liveGraceTimer){ clearTimeout(liveGraceTimer); liveGraceTimer = null; }
+  liveEverLive = true;
+
+  ALL_STOPS = state.stops.map(s => ({ en: s.en, ur: s.ur || '' }));
+  N_STOPS   = ALL_STOPS.length;
+  route     = ALL_STOPS;
+
+  if(state.moving && state.nextIndex != null){
+    curIdx    = state.atIndex;
+    pendingIdx = state.nextIndex;
+    busState  = 'moving';
+  } else {
+    curIdx    = state.atIndex;
+    pendingIdx = -1;
+    busState  = 'at';
+  }
+
+  renderWindow();
+  /* Cards mirror the simulation's convention: while moving, the approached
+     stop is shown as "current". */
+  updateCards(busState === 'moving' ? pendingIdx : curIdx);
+
+  /* Live ETA overrides the simulation's fixed minPerStop; '—' when unknown. */
+  const etaEl = document.getElementById('eta-n');
+  if(etaEl) etaEl.textContent = (state.etaMinutes == null ? '—' : state.etaMinutes);
+
+  placeLiveBus();
+}
+
+/* Position the bus overlay on the active circle after the DOM has painted. */
+function placeLiveBus(){
+  requestAnimationFrame(() => {
+    const idx = (busState === 'moving' && pendingIdx >= 0) ? pendingIdx : curIdx;
+    const c = circleCentre(idx);
+    if(!c) return;
+    if(liveBusPlaced){ slideBus(c.x, c.y, 700); }
+    else { snapBus(c.x, c.y); liveBusPlaced = true; }
+  });
+}
+
+function startLiveMode(){
+  const b = CONFIG.backend;
+  ensureBus();
+  setLiveStatus('connecting');
+
+  const feed = MetroLiveFeed.create({
+    apiBaseUrl:     b.apiBaseUrl,
+    gtfsBaseUrl:    b.gtfsBaseUrl,
+    agencyId:       b.agencyId,
+    vehicleId:      b.vehicleId,
+    token:          b.token || null,
+    fallbackStops:  CONFIG.stops,
+    pollIntervalMs: b.pollIntervalMs || 4000,
+    onState:        applyLiveState,
+    onStatus:       setLiveStatus
+  });
+  feed.start();
+
+  /* If the backend never delivers a live snapshot within the grace window
+     (misconfiguration, network down, wrong vehicleId), fall back to the demo
+     simulation so a freshly-deployed screen is never blank. */
+  const grace = b.fallbackAfterMs || 20000;
+  liveGraceTimer = setTimeout(() => {
+    if(!liveEverLive){
+      feed.stop();
+      setLiveStatus('offline');
+      ensureBus(); runCycle();
+    }
+  }, grace);
+}
+
+/* ════════════════════════════════════════
    BOOT — config load hone ke baad hi app start hoti hai
 ════════════════════════════════════════ */
 async function boot(){
@@ -318,7 +436,14 @@ async function boot(){
   updateCards(curIdx);
   tickClock();
   setInterval(tickClock,1000);
-  setTimeout(()=>{ensureBus();runCycle();},400);
+
+  /* Live backend when configured and the adapter is present; otherwise the
+     original local simulation (demo mode). */
+  if(CONFIG.backend && CONFIG.backend.enabled && window.MetroLiveFeed){
+    setTimeout(startLiveMode, 400);
+  } else {
+    setTimeout(()=>{ensureBus();runCycle();},400);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', boot);

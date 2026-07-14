@@ -1,4 +1,15 @@
 {
+  "backend": {
+    "enabled": false,
+    "apiBaseUrl": "http://localhost:8086",
+    "gtfsBaseUrl": "http://localhost:8087",
+    "agencyId": "00000000-0000-0000-0000-000000000001",
+    "vehicleId": "",
+    "token": "",
+    "pollIntervalMs": 4000,
+    "fallbackAfterMs": 20000
+  },
+
   "header": {
     "titleEn": "ORANGE LINE METRO BUS SERVICE — ISLAMABAD",
     "routeFromUr": "فیض احمد فیض اسٹیشن",
