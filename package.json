@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:livefeed": "node scripts/liveFeed.smoke.cjs",
+    "test:pid-dom": "node scripts/pid.dom.test.cjs",
+    "test:e2e": "node scripts/pid.e2e.cjs"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +18,8 @@
     "@capacitor/core": "^8.4.1"
   },
   "devDependencies": {
+    "jsdom": "^24.0.0",
+    "playwright": "^1.61.0",
     "typescript": "^7.0.2"
   }
 }
