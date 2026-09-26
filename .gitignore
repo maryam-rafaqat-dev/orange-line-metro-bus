@@ -1,7 +1,20 @@
+# Dependencies
 node_modules/
+
+# Editor / OS
 .idea/
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+
+# Archives, backups, temp files
 *.zip
 *.bak
+*.diff
+
+# Android local / build files
 android/local.properties
 android/.gradle/
 android/build/
