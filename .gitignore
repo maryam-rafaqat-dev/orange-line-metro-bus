@@ -1,10 +1,18 @@
 # Dependencies
 node_modules/
 
-# Build artifacts / archives
-*.zip
-
-# OS / editor
+# Editor / OS
+.idea/
 .DS_Store
 Thumbs.db
-.idea/
+
+# Archives, backups, temp files
+*.zip
+*.bak
+*.diff
+
+# Android local / build files
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/

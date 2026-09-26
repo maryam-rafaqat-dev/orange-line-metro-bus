@@ -1,9 +1,0 @@
-import type { CapacitorConfig } from '@capacitor/cli';
-
-const config: CapacitorConfig = {
-  appId: 'com.tap.orangelinemetro',
-  appName: 'Orange Line Metro Bus',
-  webDir: 'www'
-};
-
-export default config;
