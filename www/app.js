@@ -16,19 +16,40 @@ async function loadConfig(){
 
 let CONFIG = null;   /* poori app ke liye globally available, loadConfig() ke baad set hota hai */
 
-function fitToScreen(){
-  const app = document.getElementById('app');
-  if(!app) return;
-  const DESIGN_W = 1920, DESIGN_H = 1080;
-  const scale = Math.max(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
-  const left  = (window.innerWidth  - DESIGN_W * scale) / 2;
-  const top   = (window.innerHeight - DESIGN_H * scale) / 2;
-  app.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+/* Responsive: pick how many stations fit in the route track */
+function calcAdaptiveWin(){
+  var track = document.getElementById('rtrack');
+  if(!track || track.clientWidth === 0) return Math.min(7, N_STOPS || 7);
+  var win = Math.floor(track.clientWidth / 140);
+  /* Clamp 3–N_STOPS, prefer odd so current station centres */
+  win = Math.max(3, Math.min(N_STOPS || 7, win));
+  if(win > 3 && win % 2 === 0) win--;
+  return win;
 }
-window.addEventListener('resize', fitToScreen);
-window.addEventListener('orientationchange', fitToScreen);
-document.addEventListener('DOMContentLoaded', fitToScreen);
-fitToScreen();
+
+/* Responsive: debounced resize handler — updates WIN & re-snaps bus */
+var _resizeTimer = null;
+function handleResize(){
+  if(!CONFIG) return;
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(function(){
+    var newWin = calcAdaptiveWin();
+    if(newWin !== WIN){
+      WIN = newWin;
+      renderWindow();
+    }
+    /* Double-rAF waits for layout reflow before reading circle positions */
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        var gi = busState === 'moving' ? pendingIdx : curIdx;
+        var pos = circleCentre(gi);
+        if(pos) snapBus(pos.x, pos.y);
+      });
+    });
+  }, 150);
+}
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', function(){ setTimeout(handleResize, 200); });
 
 /* STATE (config load hone ke baad populate hote hain) */
 let ALL_STOPS, WIN, N_STOPS;
@@ -91,8 +112,9 @@ function runTicker() {
 }
 
 /* WINDOW */
+/* Responsive: centre current stop for any WIN value */
 function calcWin(){
-  winStart=Math.max(0,Math.min(route.length-WIN,curIdx-2));
+  winStart=Math.max(0,Math.min(route.length-WIN,curIdx-Math.floor(WIN/2)));
   return route.slice(winStart,winStart+WIN);
 }
 
@@ -307,9 +329,10 @@ async function boot(){
   CONFIG = await loadConfig();
 
   ALL_STOPS = CONFIG.stops;
-  WIN       = 7;
   N_STOPS   = ALL_STOPS.length;
   route     = [...ALL_STOPS];
+  /* Responsive: adapt visible station count to available width */
+  WIN       = calcAdaptiveWin();
 
   applyColors();
   applyHeaderText();
