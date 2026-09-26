@@ -5,7 +5,7 @@
  * feeds into ONE normalized snapshot describing where *this* vehicle is, and
  * hand that snapshot to a callback. It performs NO DOM work — app.js owns all
  * rendering. Keeping this module DOM-free makes it unit-testable under Node
- * (see scripts/liveFeed.smoke.mjs) and keeps the render layer untouched.
+ * (see scripts/liveFeed.smoke.cjs) and keeps the render layer untouched.
  *
  * Data sources (verified against the running backend):
  *   1. GET {apiBaseUrl}/api/v1/gtfs-rt/vehicle-positions?agency_id=…  (PUBLIC)
@@ -20,7 +20,8 @@
  *   • Authoritative (token set): stop list comes from stop-times, so the route
  *     order and direction are always correct for the active trip.
  *   • Public (no token): stop names come from the caller-supplied fallbackStops
- *     (the PID's own config.stops), mapped by stop_sequence order.
+ *     (the PID's own config.stops), mapped by stop_sequence order. Direction
+ *     must be known (from direction_id) to order stops correctly.
  *
  * The adapter is defensive: per-request timeouts, no overlapping polls,
  * exponential backoff on failure, explicit 429 (rate-limit) handling, and a
@@ -77,6 +78,8 @@
 
   // ---- normalization -------------------------------------------------------
 
+  function normalizeName(s) { return String(s || '').trim().toLowerCase(); }
+
   /**
    * Translate a GTFS current_stop_sequence (1-based) + current_status into the
    * PID's model of "which stop are we at / heading to".
@@ -102,6 +105,17 @@
     if (atIndex < 0) atIndex = 0;                 // clamp: heading to first stop
     if (nextIndex !== null && nextIndex >= stopCount) nextIndex = null;
     return { atIndex: atIndex, nextIndex: nextIndex, moving: moving };
+  }
+
+  /* ISSUE 1: derive travel direction from the trip's stop list vs config */
+  function deriveDirection(stops, fallbackStops) {
+    if (!stops || !stops.length || !fallbackStops || !fallbackStops.length) return 'fwd';
+    var first = normalizeName(stops[0].en);
+    var cfgFirst = normalizeName(fallbackStops[0].en);
+    var cfgLast = normalizeName(fallbackStops[fallbackStops.length - 1].en);
+    if (first === cfgFirst) return 'fwd';
+    if (first === cfgLast) return 'rev';
+    return 'fwd';
   }
 
   // ---- the adapter ---------------------------------------------------------
@@ -130,7 +144,7 @@
 
     // Cache the authoritative stop list per trip so we don't refetch it every
     // tick (stop lists are static for the life of a trip).
-    var tripStopsCache = { tripId: null, stops: null };
+    var tripStopsCache = { tripId: null, stops: null, direction: null };
 
     // Urdu lookup built from the caller's config stops (backend has no Urdu).
     var urduByEn = {};
@@ -138,7 +152,6 @@
       if (s && s.en) urduByEn[normalizeName(s.en)] = s.ur || '';
     });
 
-    function normalizeName(s) { return String(s || '').trim().toLowerCase(); }
     function urduFor(en) { return urduByEn[normalizeName(en)] || ''; }
 
     function emitStatus(status) {
@@ -159,17 +172,23 @@
     }
 
     /** Resolve the ordered stop list for a trip (authoritative or fallback). */
-    function resolveStops(tripId) {
+    function resolveStops(tripId, dirHint) {
       if (tripStopsCache.tripId === tripId && tripStopsCache.stops) {
-        return Promise.resolve(tripStopsCache.stops);
+        return Promise.resolve(tripStopsCache);
       }
-      // Public mode: no token ⇒ use the PID's own configured stop list.
+      // Public mode: no token ⇒ direction must be known to order stops.
       if (!cfg.token) {
-        var fromConfig = (cfg.fallbackStops || []).map(function (s, i) {
+        if (!dirHint) {
+          console.warn('liveFeed: cannot determine direction in public mode (no direction_id)');
+          return Promise.resolve(null);
+        }
+        var srcStops = (cfg.fallbackStops || []).slice();
+        if (dirHint === 'rev') srcStops.reverse();
+        var fromConfig = srcStops.map(function (s, i) {
           return { en: s.en, ur: s.ur || '', seq: i + 1 };
         });
-        tripStopsCache = { tripId: tripId, stops: fromConfig };
-        return Promise.resolve(fromConfig);
+        tripStopsCache = { tripId: tripId, stops: fromConfig, direction: dirHint };
+        return Promise.resolve(tripStopsCache);
       }
       // Authoritative mode: stop-times gives real names + direction for THIS trip.
       return fetchJson(stopTimesUrl(tripId), { token: cfg.token, timeoutMs: cfg.requestTimeoutMs })
@@ -177,8 +196,9 @@
           var stops = (rows || []).map(function (st) {
             return { en: st.stop_name, ur: urduFor(st.stop_name), seq: st.stop_sequence };
           });
-          tripStopsCache = { tripId: tripId, stops: stops };
-          return stops;
+          var dir = dirHint || deriveDirection(stops, cfg.fallbackStops);
+          tripStopsCache = { tripId: tripId, stops: stops, direction: dir };
+          return tripStopsCache;
         });
     }
 
@@ -222,8 +242,18 @@
             emitStatus('offline'); return null;                            // deadhead / no trip
           }
 
-          return resolveStops(pos.trip_id).then(function (stops) {
-            if (!stops || !stops.length) { emitStatus('offline'); return null; }
+          /* ISSUE 1: check for direction_id on the vehicle entity */
+          var dirHint = null;
+          if (pos.direction_id != null) {
+            dirHint = (Number(pos.direction_id) === 0) ? 'fwd' : 'rev';
+          }
+
+          return resolveStops(pos.trip_id, dirHint).then(function (resolved) {
+            if (!resolved || !resolved.stops || !resolved.stops.length) {
+              emitStatus('offline'); return null;
+            }
+            var stops = resolved.stops;
+            var direction = resolved.direction;
             var place = derivePosition(pos.current_stop_sequence, pos.current_status, stops.length);
             var targetSeq = place.nextIndex != null ? stops[place.nextIndex].seq : null;
 
@@ -234,6 +264,7 @@
                   vehicleId: cfg.vehicleId,
                   tripId: pos.trip_id,
                   stops: stops,
+                  direction: direction,
                   atIndex: place.atIndex,
                   nextIndex: place.nextIndex,
                   moving: place.moving,
@@ -283,5 +314,9 @@
     };
   }
 
-  return { create: create, _derivePosition: derivePosition };
+  return {
+    create: create,
+    _derivePosition: derivePosition,
+    _deriveDirection: deriveDirection
+  };
 });

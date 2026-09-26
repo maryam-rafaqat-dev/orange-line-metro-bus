@@ -1,20 +1,6 @@
+/* loadConfig and CONFIG_STORAGE_KEY are provided by configLoader.js */
 
-
-const LOCAL_STORAGE_KEY = 'metroConfigOverride';
-
-/* Config ko load karta hai: pehle localStorage (Settings page se
-   saved), agar wo na ho to config.json (default) */
-async function loadConfig(){
-  const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (saved) {
-    try { return JSON.parse(saved); }
-    catch(e){ console.warn('Saved config corrupt, falling back to config.json', e); }
-  }
-  const res = await fetch('config.json');
-  return await res.json();
-}
-
-let CONFIG = null;   /* poori app ke liye globally available, loadConfig() ke baad set hota hai */
+let CONFIG = null;
 
 /* Responsive: pick how many stations fit in the route track */
 function calcAdaptiveWin(){
@@ -41,6 +27,15 @@ function handleResize(){
     /* Double-rAF waits for layout reflow before reading circle positions */
     requestAnimationFrame(function(){
       requestAnimationFrame(function(){
+        /* ISSUE 5: midway bus on resize when live-moving */
+        if(isLiveMode && busState === 'moving' && pendingIdx >= 0){
+          var from = circleCentre(curIdx);
+          var to = circleCentre(pendingIdx);
+          if(from && to){
+            snapBus((from.x + to.x) / 2, (from.y + to.y) / 2);
+            return;
+          }
+        }
         var gi = busState === 'moving' ? pendingIdx : curIdx;
         var pos = circleCentre(gi);
         if(pos) snapBus(pos.x, pos.y);
@@ -51,9 +46,12 @@ function handleResize(){
 window.addEventListener('resize', handleResize);
 window.addEventListener('orientationchange', function(){ setTimeout(handleResize, 200); });
 
-/* STATE (config load hone ke baad populate hote hain) */
+/* STATE */
 let ALL_STOPS, WIN, N_STOPS;
 let route, curIdx=0, dir='fwd', winStart=0, busState='at', pendingIdx=-1, tripCount=0;
+var isLiveMode = false;
+var _demoTimers = [];
+var demoFallbackActive = false;
 
 /* ════════════════════════════════════════
    TIMETABLE
@@ -164,8 +162,6 @@ function renderWindow(){
       ? String(gi+1).padStart(2,'0')
       : String(N_STOPS-gi).padStart(2,'0');
 
-    const time=arrivalTime(gi);
-
     let cls;
     if(busState==='moving'){
       if     (gi<curIdx)             cls='rn done';
@@ -185,17 +181,33 @@ function renderWindow(){
       else                           cls='rn upcoming';
     }
 
+    /* ISSUE 2: live mode shows status markers, demo shows timetable times */
     let topBadge;
-    if(gi<curIdx){
-      topBadge=`<div class="rn-eta rn-eta-done">✓ ${time}</div>`;
-    } else if(gi===curIdx && busState==='at'){
-      topBadge=`<div class="rn-eta rn-eta-cur">${time}</div>`;
-    } else if(gi===curIdx && busState==='moving'){
-      topBadge=`<div class="rn-eta rn-eta-done">✓ ${time}</div>`;
-    } else if(gi===pendingIdx && busState==='moving'){
-      topBadge=`<div class="rn-eta rn-eta-moving">→ ${time}</div>`;
+    if(isLiveMode){
+      if(gi<curIdx){
+        topBadge='<div class="rn-eta rn-eta-done">✓</div>';
+      } else if(gi===curIdx && busState==='at'){
+        topBadge='<div class="rn-eta rn-eta-cur">●</div>';
+      } else if(gi===curIdx && busState==='moving'){
+        topBadge='<div class="rn-eta rn-eta-done">✓</div>';
+      } else if(gi===pendingIdx && busState==='moving'){
+        topBadge='<div class="rn-eta rn-eta-moving">→</div>';
+      } else {
+        topBadge='<div class="rn-eta rn-eta-ahead">—</div>';
+      }
     } else {
-      topBadge=`<div class="rn-eta rn-eta-ahead">${time}</div>`;
+      const time=arrivalTime(gi);
+      if(gi<curIdx){
+        topBadge=`<div class="rn-eta rn-eta-done">✓ ${time}</div>`;
+      } else if(gi===curIdx && busState==='at'){
+        topBadge=`<div class="rn-eta rn-eta-cur">${time}</div>`;
+      } else if(gi===curIdx && busState==='moving'){
+        topBadge=`<div class="rn-eta rn-eta-done">✓ ${time}</div>`;
+      } else if(gi===pendingIdx && busState==='moving'){
+        topBadge=`<div class="rn-eta rn-eta-moving">→ ${time}</div>`;
+      } else {
+        topBadge=`<div class="rn-eta rn-eta-ahead">${time}</div>`;
+      }
     }
 
     const inner=`<span class="rn-stop-num">${stopNum}</span>`;
@@ -242,14 +254,18 @@ function updateCards(idx){
   document.getElementById('nxt-en').textContent=nxt?nxt.en:'—';
   document.getElementById('nxt-ur').textContent=nxt?nxt.ur:'';
   document.getElementById('dir-arrow').textContent='▶';
-  document.getElementById('eta-n').textContent=nxt?CONFIG.timing.minPerStop:'—';
-  const e1=document.getElementById('cur-time');
-  const e2=document.getElementById('nxt-time');
-  if(e1) e1.textContent=arrivalTime(idx);
-  if(e2) e2.textContent=nxt?arrivalTime(idx+1):'';
+
+  /* ISSUE 2: only set demo timetable times when not in live mode */
+  if(!isLiveMode){
+    document.getElementById('eta-n').textContent=nxt?CONFIG.timing.minPerStop:'—';
+    const e1=document.getElementById('cur-time');
+    const e2=document.getElementById('nxt-time');
+    if(e1) e1.textContent=arrivalTime(idx);
+    if(e2) e2.textContent=nxt?arrivalTime(idx+1):'';
+  }
 }
 
-/* MAIN CYCLE */
+/* MAIN CYCLE — ISSUE 6: track timers so demo can be stopped cleanly */
 function runCycle(){
   busState='at';
   renderWindow();
@@ -258,7 +274,7 @@ function runCycle(){
     if(pos)snapBus(pos.x,pos.y);
   });
 
-  setTimeout(()=>{
+  var t1=setTimeout(()=>{
     if(curIdx>=route.length-1){
       tripCount++;
       dir=dir==='fwd'?'rev':'fwd';
@@ -276,13 +292,20 @@ function runCycle(){
       updateCards(curIdx);runCycle();return;
     }
     slideBus(target.x,target.y,CONFIG.timing.slideToNext);
-    setTimeout(()=>{
+    var t2=setTimeout(()=>{
       curIdx=pendingIdx;pendingIdx=-1;busState='at';
       const fin=circleCentre(curIdx);
       if(fin)snapBus(fin.x,fin.y);
       renderWindow();updateCards(curIdx);runCycle();
     },CONFIG.timing.slideToNext+100);
+    _demoTimers.push(t2);
   },CONFIG.timing.waitAtStation);
+  _demoTimers.push(t1);
+}
+
+function stopDemoCycle(){
+  _demoTimers.forEach(clearTimeout);
+  _demoTimers = [];
 }
 
 /* CLOCK */
@@ -297,7 +320,7 @@ function tickClock(){
     `${D[now.getDay()]}, ${now.getDate()} ${M[now.getMonth()]} ${now.getFullYear()}`;
 }
 
-/* HEADER TEXT (ab config se aata hai, HTML me hardcoded nahi) */
+/* HEADER TEXT */
 function applyHeaderText(){
   const titleEl = document.getElementById('hdr-title-text');
   if(titleEl) titleEl.textContent = CONFIG.header.titleEn;
@@ -331,14 +354,14 @@ function applyColors(){
    that snapshot onto the SAME render layer the simulation uses (renderWindow /
    updateCards / the bus overlay), so nothing in the GUI changes.
 
-   Resilience rule: the simulation is a fallback ONLY when the backend is
-   unconfigured or never becomes live. Once we have shown real data, a later
-   drop surfaces a status badge and freezes the last real state — we never
-   silently animate a fake bus, which would mislead passengers.
+   Resilience: if the backend never becomes live, fall back to demo but keep
+   retrying. Once a real snapshot arrives, stop the demo cycle and switch back
+   to live. A later drop surfaces a status badge and freezes the last state.
 ════════════════════════════════════════ */
-let liveEverLive = false;   /* have we ever rendered a real snapshot? */
-let liveBusPlaced = false;  /* first bus placement snaps; later ones slide */
+let liveEverLive = false;
+let liveBusPlaced = false;
 let liveGraceTimer = null;
+var _liveFeed = null;
 
 function ensureLiveBadge(){
   let el = document.getElementById('live-badge');
@@ -370,11 +393,24 @@ function setLiveStatus(status){
 /* Map one normalized snapshot onto the existing render globals + layer. */
 function applyLiveState(state){
   if(liveGraceTimer){ clearTimeout(liveGraceTimer); liveGraceTimer = null; }
+
+  /* ISSUE 6: switching back from demo fallback to live */
+  if(demoFallbackActive){
+    stopDemoCycle();
+    demoFallbackActive = false;
+  }
+  isLiveMode = true;
   liveEverLive = true;
 
-  ALL_STOPS = state.stops.map(s => ({ en: s.en, ur: s.ur || '' }));
-  N_STOPS   = ALL_STOPS.length;
-  route     = ALL_STOPS;
+  /* ISSUE 1: keep ALL_STOPS in forward config order; set dir from snapshot */
+  ALL_STOPS = CONFIG.stops;
+  dir = state.direction || 'fwd';
+  route = dir === 'rev' ? [...ALL_STOPS].reverse() : [...ALL_STOPS];
+
+  /* STEP 0: recalculate WIN if stop count changed */
+  var prevN = N_STOPS;
+  N_STOPS = route.length;
+  if(N_STOPS !== prevN) WIN = calcAdaptiveWin();
 
   if(state.moving && state.nextIndex != null){
     curIdx    = state.atIndex;
@@ -387,22 +423,40 @@ function applyLiveState(state){
   }
 
   renderWindow();
-  /* Cards mirror the simulation's convention: while moving, the approached
-     stop is shown as "current". */
   updateCards(busState === 'moving' ? pendingIdx : curIdx);
 
-  /* Live ETA overrides the simulation's fixed minPerStop; '—' when unknown. */
-  const etaEl = document.getElementById('eta-n');
+  /* ISSUE 2: live ETA overrides demo timetable */
+  var etaEl = document.getElementById('eta-n');
   if(etaEl) etaEl.textContent = (state.etaMinutes == null ? '—' : state.etaMinutes);
+  var e1 = document.getElementById('cur-time');
+  var e2 = document.getElementById('nxt-time');
+  if(e1) e1.textContent = '';
+  if(e2){
+    if(state.etaMinutes != null){
+      var arr = new Date(Date.now() + state.etaMinutes * 60000);
+      e2.textContent = 'ETA ' + String(arr.getHours()).padStart(2,'0') + ':' + String(arr.getMinutes()).padStart(2,'0');
+    } else { e2.textContent = ''; }
+  }
 
   placeLiveBus();
 }
 
-/* Position the bus overlay on the active circle after the DOM has painted. */
+/* ISSUE 5: place bus midway between stations when moving */
 function placeLiveBus(){
   requestAnimationFrame(() => {
-    const idx = (busState === 'moving' && pendingIdx >= 0) ? pendingIdx : curIdx;
-    const c = circleCentre(idx);
+    if(busState === 'moving' && pendingIdx >= 0){
+      var from = circleCentre(curIdx);
+      var to = circleCentre(pendingIdx);
+      if(from && to){
+        var mx = (from.x + to.x) / 2;
+        var my = (from.y + to.y) / 2;
+        if(liveBusPlaced){ slideBus(mx, my, 700); }
+        else { snapBus(mx, my); liveBusPlaced = true; }
+        return;
+      }
+    }
+    var idx = curIdx;
+    var c = circleCentre(idx);
     if(!c) return;
     if(liveBusPlaced){ slideBus(c.x, c.y, 700); }
     else { snapBus(c.x, c.y); liveBusPlaced = true; }
@@ -414,7 +468,7 @@ function startLiveMode(){
   ensureBus();
   setLiveStatus('connecting');
 
-  const feed = MetroLiveFeed.create({
+  _liveFeed = MetroLiveFeed.create({
     apiBaseUrl:     b.apiBaseUrl,
     gtfsBaseUrl:    b.gtfsBaseUrl,
     agencyId:       b.agencyId,
@@ -425,23 +479,23 @@ function startLiveMode(){
     onState:        applyLiveState,
     onStatus:       setLiveStatus
   });
-  feed.start();
+  _liveFeed.start();
 
-  /* If the backend never delivers a live snapshot within the grace window
-     (misconfiguration, network down, wrong vehicleId), fall back to the demo
-     simulation so a freshly-deployed screen is never blank. */
+  /* ISSUE 6: fall back to demo but keep retrying — the feed is NOT stopped,
+     so when the backend recovers, applyLiveState stops the demo cycle. */
   const grace = b.fallbackAfterMs || 20000;
   liveGraceTimer = setTimeout(() => {
     if(!liveEverLive){
-      feed.stop();
       setLiveStatus('offline');
+      demoFallbackActive = true;
+      isLiveMode = false;
       ensureBus(); runCycle();
     }
   }, grace);
 }
 
 /* ════════════════════════════════════════
-   BOOT — config load hone ke baad hi app start hoti hai
+   BOOT
 ════════════════════════════════════════ */
 async function boot(){
   CONFIG = await loadConfig();

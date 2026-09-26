@@ -7,6 +7,8 @@
  * layout), a non-null ETA, a moving bus across polls, and public (tokenless)
  * mode. Screenshots are written to the scratchpad dir passed as $SHOT_DIR.
  * Requires the backend stack running on :8086 / :8087.
+ *
+ * Credentials come from environment variables (see .env.example).
  */
 const http = require('http');
 const fs = require('fs');
@@ -16,11 +18,14 @@ const { chromium } = require('playwright');
 
 const WWW = path.join(__dirname, '..', 'www');
 const PORT = 8799;
-const API = 'http://localhost:8086';
-const GTFS = 'http://localhost:8087';
-const AGENCY = '00000000-0000-0000-0000-000000000001';
-const VEHICLE = '2f8f1b2c-7f93-4d6a-a7f4-9e41bd56a4c1';
-const TRIP = 'f1000000-0000-0000-0000-000000000002';
+const API      = process.env.API_BASE          || 'http://localhost:8086';
+const GTFS     = process.env.GTFS_BASE         || 'http://localhost:8087';
+const AGENCY   = process.env.AGENCY_ID         || '';
+const VEHICLE  = process.env.VEHICLE_ID        || '';
+const TRIP     = process.env.TRIP_ID           || '';
+const AGENCY_CODE  = process.env.TEST_AGENCY_CODE  || '';
+const EMPLOYEE_ID  = process.env.TEST_EMPLOYEE_ID  || '';
+const PIN          = process.env.TEST_PIN          || '';
 const SHOT_DIR = process.env.SHOT_DIR || '.';
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json',
@@ -46,6 +51,7 @@ function serve() {
 
 /** Replace the vehicle's latest position with a fresh one (now, given seq/status). */
 function pushPosition(seq, status) {
+  if (!VEHICLE) return;
   const sql =
     "insert into vehicle_positions (time, vehicle_id, trip_id, route_id, location, bearing, speed, " +
     "odometer, current_stop_sequence, current_status, congestion_level, occupancy_status, " +
@@ -59,7 +65,7 @@ function pushPosition(seq, status) {
 async function login() {
   const res = await fetch(API + '/api/v1/auth/login', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agency_id: 'CMTA', employee_id: 'ADM001', pin: '1234' })
+    body: JSON.stringify({ agency_id: AGENCY_CODE, employee_id: EMPLOYEE_ID, pin: PIN })
   });
   return (await res.json()).access_token;
 }
@@ -82,6 +88,11 @@ async function loadWith(page, cfgOverride) {
 }
 
 async function main() {
+  if (!AGENCY || !VEHICLE || !AGENCY_CODE || !EMPLOYEE_ID || !PIN) {
+    console.log('SKIP — set AGENCY_ID, VEHICLE_ID, TEST_AGENCY_CODE, TEST_EMPLOYEE_ID, TEST_PIN in env');
+    process.exit(0);
+  }
+
   const server = serve();
   const token = await login();
   const browser = await chromium.launch();
@@ -94,26 +105,22 @@ async function main() {
   });
 
   // ---- Test A: authoritative live mode, bus placement, non-null ETA --------
-  // STOPPED_AT seq1 → next stop is seq2, which the predictor DOES include.
-  // The positions feed updates instantly but the ETA feed regenerates every
-  // ~10s, so wait until BOTH agree before loading the page — otherwise the
-  // page can momentarily derive a next stop the ETA feed hasn't published yet.
   pushPosition(1, 'STOPPED_AT');
-  process.stdout.write('   waiting for positions+ETA feeds to converge on seq1... ');
-  for (let i = 0; i < 20; i++) {
-    const feed = await (await fetch(GTFS + '/gtfs-rt/trip-updates')).json();
-    const e = (feed.entity || []).find((x) => x.trip_update && x.trip_update.trip.trip_id === TRIP);
-    const hasSeq2 = e && (e.trip_update.stop_time_update || []).some((u) => u.stop_sequence === 2);
-    if (hasSeq2) { console.log('ready'); break; }
-    await new Promise((r) => setTimeout(r, 2000));
+  if (TRIP) {
+    process.stdout.write('   waiting for positions+ETA feeds to converge on seq1... ');
+    for (let i = 0; i < 20; i++) {
+      const feed = await (await fetch(GTFS + '/gtfs-rt/trip-updates')).json();
+      const e = (feed.entity || []).find((x) => x.trip_update && x.trip_update.trip.trip_id === TRIP);
+      const hasSeq2 = e && (e.trip_update.stop_time_update || []).some((u) => u.stop_sequence === 2);
+      if (hasSeq2) { console.log('ready'); break; }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
   }
   const pageA = await ctx.newPage();
   await loadWith(pageA, liveCfg);
   await pageA.waitForFunction(() =>
     (document.getElementById('live-badge') || {}).textContent === '● LIVE', { timeout: 15000 });
 
-  // The gtfs-rt ETA feed regenerates every ~10s; wait for the ring to show a
-  // number rather than reading it on the first poll.
   await pageA.waitForFunction(() =>
     /^\d+$/.test(((document.getElementById('eta-n') || {}).textContent || '').trim()),
     { timeout: 25000 }).catch(() => {});

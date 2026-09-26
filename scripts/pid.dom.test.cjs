@@ -7,15 +7,20 @@
  * mode, and asserts the actual on-screen elements update with live data.
  * Requires the backend up and a FRESH position for the test vehicle (the
  * runner inserts one before invoking this).
+ *
+ * Credentials come from environment variables (see .env.example).
  */
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
 
-const API = 'http://localhost:8086';
-const GTFS = 'http://localhost:8087';
-const AGENCY = '00000000-0000-0000-0000-000000000001';
-const VEHICLE = '2f8f1b2c-7f93-4d6a-a7f4-9e41bd56a4c1';
+const API      = process.env.API_BASE      || 'http://localhost:8086';
+const GTFS     = process.env.GTFS_BASE     || 'http://localhost:8087';
+const AGENCY   = process.env.AGENCY_ID     || '';
+const VEHICLE  = process.env.VEHICLE_ID    || '';
+const AGENCY_CODE  = process.env.TEST_AGENCY_CODE  || '';
+const EMPLOYEE_ID  = process.env.TEST_EMPLOYEE_ID  || '';
+const PIN          = process.env.TEST_PIN          || '';
 
 let failures = 0;
 const check = (name, cond, extra) => {
@@ -26,12 +31,17 @@ const check = (name, cond, extra) => {
 async function login() {
   const res = await fetch(API + '/api/v1/auth/login', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agency_id: 'CMTA', employee_id: 'ADM001', pin: '1234' })
+    body: JSON.stringify({ agency_id: AGENCY_CODE, employee_id: EMPLOYEE_ID, pin: PIN })
   });
   return (await res.json()).access_token;
 }
 
 async function main() {
+  if (!AGENCY || !VEHICLE || !AGENCY_CODE || !EMPLOYEE_ID || !PIN) {
+    console.log('SKIP — set AGENCY_ID, VEHICLE_ID, TEST_AGENCY_CODE, TEST_EMPLOYEE_ID, TEST_PIN in env');
+    process.exit(0);
+  }
+
   const www = path.join(__dirname, '..', 'www');
   const token = await login();
   check('obtained backend token', !!token);
@@ -46,6 +56,7 @@ async function main() {
   // Load index.html but strip the external <script src> tags — we inject the
   // real files ourselves so they execute in-process against our fetch.
   let html = fs.readFileSync(path.join(www, 'index.html'), 'utf8')
+    .replace(/<script src="configLoader.js"><\/script>/, '')
     .replace(/<script src="liveFeed.js"><\/script>/, '')
     .replace(/<script src="app.js"><\/script>/, '');
 
@@ -61,6 +72,7 @@ async function main() {
     s.textContent = fs.readFileSync(path.join(www, file), 'utf8');
     window.document.body.appendChild(s);
   };
+  inject('configLoader.js');
   inject('liveFeed.js');
   inject('app.js');
 
@@ -84,12 +96,15 @@ async function main() {
   check('next-stop name populated from backend', nxtEn.length > 0, nxtEn);
 
   // Cross-check the rendered name really is one of the backend trip's stops.
-  const stRes = await fetch(API + '/api/v1/trips/f1000000-0000-0000-0000-000000000002/stop-times', {
-    headers: { Authorization: 'Bearer ' + token }
-  });
-  const backendNames = (await stRes.json()).map((s) => s.stop_name);
-  check('rendered current stop is a real backend stop', backendNames.includes(curEn),
-    'backend stops: ' + backendNames.join(', '));
+  const tripId = process.env.TRIP_ID || '';
+  if (tripId) {
+    const stRes = await fetch(API + '/api/v1/trips/' + tripId + '/stop-times', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    const backendNames = (await stRes.json()).map((s) => s.stop_name);
+    check('rendered current stop is a real backend stop', backendNames.includes(curEn),
+      'backend stops: ' + backendNames.join(', '));
+  }
 
   window.close();
 }

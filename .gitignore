@@ -6,6 +6,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# Secrets
+.env
+
 # Archives, backups, temp files
 *.zip
 *.bak

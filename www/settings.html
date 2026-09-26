@@ -14,7 +14,7 @@
   section{background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
   section h2{font-size:16px;margin:0 0 12px;color:#E8620A;border-bottom:2px solid #FFD4A8;padding-bottom:8px;}
   label{display:block;font-size:12px;font-weight:700;color:#666;margin-bottom:4px;margin-top:10px;}
-  input[type=text],input[type=number]{width:100%;padding:10px;border:1px solid #DDD;border-radius:8px;font-size:14px;}
+  input[type=text],input[type=number],input[type=password]{width:100%;padding:10px;border:1px solid #DDD;border-radius:8px;font-size:14px;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
   .item{border:1px solid #EEE;border-radius:10px;padding:12px;margin-bottom:10px;position:relative;background:#FAFAFA;}
@@ -29,13 +29,15 @@
   .toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;}
   .toast.show{opacity:1;}
   .hint{font-size:12px;color:#999;margin-top:-6px;margin-bottom:8px;}
+  .token-wrap{position:relative;}
+  .token-toggle{position:absolute;right:8px;top:8px;background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>⚙ Display Settings</h1>
-  <a href="index.html">← Back to Display</a>
+  <h1>&#9881; Display Settings</h1>
+  <a href="index.html">&larr; Back to Display</a>
 </header>
 
 <div class="wrap">
@@ -44,9 +46,9 @@
     <h2>Header / Title</h2>
     <label>English Title</label>
     <input type="text" id="cfg-titleEn">
-    <label>Route — Urdu (From)</label>
+    <label>Route &mdash; Urdu (From)</label>
     <input type="text" id="cfg-routeFromUr" dir="rtl">
-    <label>Route — Urdu (To)</label>
+    <label>Route &mdash; Urdu (To)</label>
     <input type="text" id="cfg-routeToUr" dir="rtl">
   </section>
 
@@ -70,12 +72,19 @@
         <input type="number" id="cfg-tickerSpeed">
       </div>
     </div>
-    <label>Forward trip — first departure (24hr)</label>
+    <div class="row2">
+      <div>
+        <label>Trip gap (min between trips)</label>
+        <input type="number" id="cfg-tripGap">
+      </div>
+      <div></div>
+    </div>
+    <label>Forward trip &mdash; first departure (24hr)</label>
     <div class="row2">
       <input type="number" id="cfg-fwdH" placeholder="Hour" min="0" max="23">
       <input type="number" id="cfg-fwdM" placeholder="Minute" min="0" max="59">
     </div>
-    <label>Return trip — first departure (24hr)</label>
+    <label>Return trip &mdash; first departure (24hr)</label>
     <div class="row2">
       <input type="number" id="cfg-revH" placeholder="Hour" min="0" max="23">
       <input type="number" id="cfg-revM" placeholder="Minute" min="0" max="59">
@@ -83,8 +92,50 @@
   </section>
 
   <section>
+    <h2>Live Backend</h2>
+    <div class="fare-check">
+      <input type="checkbox" id="cfg-backendEnabled"> Enable live mode
+    </div>
+    <div class="row2">
+      <div>
+        <label>API Base URL</label>
+        <input type="text" id="cfg-apiBaseUrl" placeholder="http://host:8086">
+      </div>
+      <div>
+        <label>GTFS Base URL</label>
+        <input type="text" id="cfg-gtfsBaseUrl" placeholder="http://host:8087">
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <label>Agency ID</label>
+        <input type="text" id="cfg-agencyId">
+      </div>
+      <div>
+        <label>Vehicle ID</label>
+        <input type="text" id="cfg-vehicleId">
+      </div>
+    </div>
+    <label>Token (JWT)</label>
+    <div class="token-wrap">
+      <input type="password" id="cfg-token">
+      <button type="button" class="token-toggle" id="token-toggle" onclick="toggleTokenVisibility()">&#128065;</button>
+    </div>
+    <div class="row2">
+      <div>
+        <label>Poll interval (ms)</label>
+        <input type="number" id="cfg-pollIntervalMs">
+      </div>
+      <div>
+        <label>Fallback after (ms)</label>
+        <input type="number" id="cfg-fallbackAfterMs">
+      </div>
+    </div>
+  </section>
+
+  <section>
     <h2>Stops (Route)</h2>
-    <div class="hint">Bus isi order me chalega — pehla stop = start, aakhri = destination.</div>
+    <div class="hint">Bus isi order me chalega &mdash; pehla stop = start, aakhri = destination.</div>
     <div id="stopsList"></div>
     <button class="add-btn" onclick="addStop()">+ Add Stop</button>
   </section>
@@ -99,20 +150,20 @@
 
 <div class="actions">
   <button id="resetBtn" onclick="resetDefaults()">Reset to Defaults</button>
-  <button id="saveBtn" onclick="saveConfig()">💾 Save Changes</button>
+  <button id="saveBtn" onclick="saveConfig()">&#128190; Save Changes</button>
 </div>
 
 <div class="toast" id="toast"></div>
 
+<script src="configLoader.js"></script>
 <script>
-const LOCAL_STORAGE_KEY = 'metroConfigOverride';
+/* loadConfig and CONFIG_STORAGE_KEY come from configLoader.js */
 let cfg = null;
 
-async function loadConfig(){
-  const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (saved) { try { return JSON.parse(saved); } catch(e){} }
-  const res = await fetch('config.json');
-  return await res.json();
+function toggleTokenVisibility(){
+  var el = document.getElementById('cfg-token');
+  el.type = el.type === 'password' ? 'text' : 'password';
+  document.getElementById('token-toggle').textContent = el.type === 'password' ? '👁' : '🔒';
 }
 
 function render(){
@@ -124,49 +175,59 @@ function render(){
   document.getElementById('cfg-slideToNext').value = cfg.timing.slideToNext;
   document.getElementById('cfg-waitAtStation').value = cfg.timing.waitAtStation;
   document.getElementById('cfg-tickerSpeed').value = cfg.timing.tickerSpeed;
+  document.getElementById('cfg-tripGap').value = cfg.timing.tripGap || 5;
   document.getElementById('cfg-fwdH').value = cfg.timing.fwdFirstDep.h;
   document.getElementById('cfg-fwdM').value = cfg.timing.fwdFirstDep.m;
   document.getElementById('cfg-revH').value = cfg.timing.revFirstDep.h;
   document.getElementById('cfg-revM').value = cfg.timing.revFirstDep.m;
 
-  const stopsList = document.getElementById('stopsList');
+  /* Backend fields */
+  var b = cfg.backend || {};
+  document.getElementById('cfg-backendEnabled').checked = !!b.enabled;
+  document.getElementById('cfg-apiBaseUrl').value = b.apiBaseUrl || '';
+  document.getElementById('cfg-gtfsBaseUrl').value = b.gtfsBaseUrl || '';
+  document.getElementById('cfg-agencyId').value = b.agencyId || '';
+  document.getElementById('cfg-vehicleId').value = b.vehicleId || '';
+  document.getElementById('cfg-token').value = b.token || '';
+  document.getElementById('cfg-pollIntervalMs').value = b.pollIntervalMs || 4000;
+  document.getElementById('cfg-fallbackAfterMs').value = b.fallbackAfterMs || 20000;
+
+  var stopsList = document.getElementById('stopsList');
   stopsList.innerHTML = '';
-  cfg.stops.forEach((s,i)=>{
-    const div = document.createElement('div');
+  cfg.stops.forEach(function(s,i){
+    var div = document.createElement('div');
     div.className = 'item';
-    div.innerHTML = `
-      <button class="del" onclick="removeStop(${i})">✕</button>
-      <label>Stop ${i+1} — English Name</label>
-      <input type="text" value="${escapeAttr(s.en)}" onchange="cfg.stops[${i}].en=this.value">
-      <label>Stop ${i+1} — Urdu Name</label>
-      <input type="text" dir="rtl" value="${escapeAttr(s.ur)}" onchange="cfg.stops[${i}].ur=this.value">
-    `;
+    div.innerHTML =
+      '<button class="del" onclick="removeStop('+i+')">&#10005;</button>'+
+      '<label>Stop '+(i+1)+' — English Name</label>'+
+      '<input type="text" value="'+escapeAttr(s.en)+'" onchange="cfg.stops['+i+'].en=this.value">'+
+      '<label>Stop '+(i+1)+' — Urdu Name</label>'+
+      '<input type="text" dir="rtl" value="'+escapeAttr(s.ur)+'" onchange="cfg.stops['+i+'].ur=this.value">';
     stopsList.appendChild(div);
   });
 
-  const tickerList = document.getElementById('tickerList');
+  var tickerList = document.getElementById('tickerList');
   tickerList.innerHTML = '';
-  cfg.ticker.forEach((t,i)=>{
-    const div = document.createElement('div');
+  cfg.ticker.forEach(function(t,i){
+    var div = document.createElement('div');
     div.className = 'item';
-    div.innerHTML = `
-      <button class="del" onclick="removeTicker(${i})">✕</button>
-      <div class="row3">
-        <div><label>Icon (emoji)</label><input type="text" value="${escapeAttr(t.ic)}" onchange="cfg.ticker[${i}].ic=this.value"></div>
-        <div><label>Number/Code</label><input type="text" value="${escapeAttr(t.num)}" onchange="cfg.ticker[${i}].num=this.value"></div>
-        <div class="fare-check"><input type="checkbox" ${t.fare?'checked':''} onchange="cfg.ticker[${i}].fare=this.checked"> Highlight (fare/alert style)</div>
-      </div>
-      <label>Urdu Text</label>
-      <input type="text" dir="rtl" value="${escapeAttr(t.ur)}" onchange="cfg.ticker[${i}].ur=this.value">
-      <label>English Text</label>
-      <input type="text" value="${escapeAttr(t.en)}" onchange="cfg.ticker[${i}].en=this.value">
-    `;
+    div.innerHTML =
+      '<button class="del" onclick="removeTicker('+i+')">&#10005;</button>'+
+      '<div class="row3">'+
+        '<div><label>Icon (emoji)</label><input type="text" value="'+escapeAttr(t.ic)+'" onchange="cfg.ticker['+i+'].ic=this.value"></div>'+
+        '<div><label>Number/Code</label><input type="text" value="'+escapeAttr(t.num)+'" onchange="cfg.ticker['+i+'].num=this.value"></div>'+
+        '<div class="fare-check"><input type="checkbox" '+(t.fare?'checked':'')+' onchange="cfg.ticker['+i+'].fare=this.checked"> Highlight (fare/alert style)</div>'+
+      '</div>'+
+      '<label>Urdu Text</label>'+
+      '<input type="text" dir="rtl" value="'+escapeAttr(t.ur)+'" onchange="cfg.ticker['+i+'].ur=this.value">'+
+      '<label>English Text</label>'+
+      '<input type="text" value="'+escapeAttr(t.en)+'" onchange="cfg.ticker['+i+'].en=this.value">';
     tickerList.appendChild(div);
   });
 }
 
 function escapeAttr(s){
-  return String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }
 
 function addStop(){
@@ -196,31 +257,42 @@ function collectFormValues(){
   cfg.timing.slideToNext   = Number(document.getElementById('cfg-slideToNext').value) || 1500;
   cfg.timing.waitAtStation = Number(document.getElementById('cfg-waitAtStation').value) || 3000;
   cfg.timing.tickerSpeed   = Number(document.getElementById('cfg-tickerSpeed').value) || 25;
+  cfg.timing.tripGap       = Number(document.getElementById('cfg-tripGap').value) || 5;
   cfg.timing.fwdFirstDep.h = Number(document.getElementById('cfg-fwdH').value) || 0;
   cfg.timing.fwdFirstDep.m = Number(document.getElementById('cfg-fwdM').value) || 0;
   cfg.timing.revFirstDep.h = Number(document.getElementById('cfg-revH').value) || 0;
   cfg.timing.revFirstDep.m = Number(document.getElementById('cfg-revM').value) || 0;
+
+  if(!cfg.backend) cfg.backend = {};
+  cfg.backend.enabled       = document.getElementById('cfg-backendEnabled').checked;
+  cfg.backend.apiBaseUrl    = document.getElementById('cfg-apiBaseUrl').value;
+  cfg.backend.gtfsBaseUrl   = document.getElementById('cfg-gtfsBaseUrl').value;
+  cfg.backend.agencyId      = document.getElementById('cfg-agencyId').value;
+  cfg.backend.vehicleId     = document.getElementById('cfg-vehicleId').value;
+  cfg.backend.token         = document.getElementById('cfg-token').value;
+  cfg.backend.pollIntervalMs  = Number(document.getElementById('cfg-pollIntervalMs').value) || 4000;
+  cfg.backend.fallbackAfterMs = Number(document.getElementById('cfg-fallbackAfterMs').value) || 20000;
 }
 
 function saveConfig(){
   collectFormValues();
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cfg));
+  localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(cfg));
   showToast('✅ Saved! Display page par jaa kar refresh karein.');
 }
 
 async function resetDefaults(){
-  localStorage.removeItem(LOCAL_STORAGE_KEY);
-  const res = await fetch('config.json');
+  localStorage.removeItem(CONFIG_STORAGE_KEY);
+  var res = await fetch('config.json');
   cfg = await res.json();
   render();
   showToast('Defaults restore ho gaye (abhi tak save nahi hue)');
 }
 
 function showToast(msg){
-  const t = document.getElementById('toast');
+  var t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2600);
+  setTimeout(function(){ t.classList.remove('show'); }, 2600);
 }
 
 (async function init(){
