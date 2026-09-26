@@ -1,0 +1,8 @@
+node_modules/
+.idea/
+*.zip
+*.bak
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
