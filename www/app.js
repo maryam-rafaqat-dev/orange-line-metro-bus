@@ -369,10 +369,12 @@ function ensureLiveBadge(){
     el = document.createElement('div');
     el.id = 'live-badge';
     el.style.cssText =
-      'position:fixed;left:14px;bottom:14px;z-index:9999;padding:4px 10px;'+
+      'position:absolute;right:10px;top:2px;z-index:9999;padding:4px 10px;'+
       'border-radius:12px;font:600 12px/1 Arial,sans-serif;color:#fff;'+
       'letter-spacing:.5px;opacity:.85;transition:background .3s;';
-    document.body.appendChild(el);
+    var sec = document.getElementById('prog-sec');
+    if(sec) sec.appendChild(el);
+    else document.body.appendChild(el);
   }
   return el;
 }
@@ -400,14 +402,15 @@ function applyLiveState(state){
     demoFallbackActive = false;
   }
   isLiveMode = true;
-  liveEverLive = true;
 
-  /* ISSUE 1: keep ALL_STOPS in forward config order; set dir from snapshot */
-  ALL_STOPS = CONFIG.stops;
+  /* Build lists from the snapshot — the backend may have a different stop
+     list than config.json (different count, names, or direction). */
   dir = state.direction || 'fwd';
-  route = dir === 'rev' ? [...ALL_STOPS].reverse() : [...ALL_STOPS];
+  route = state.stops.map(function(s){ return { en: s.en, ur: s.ur || '' }; });
+  /* ALL_STOPS = forward order (for banner from/to text) */
+  ALL_STOPS = dir === 'rev' ? [...route].reverse() : [...route];
 
-  /* STEP 0: recalculate WIN if stop count changed */
+  /* Recalculate WIN if stop count changed */
   var prevN = N_STOPS;
   N_STOPS = route.length;
   if(N_STOPS !== prevN) WIN = calcAdaptiveWin();
@@ -422,15 +425,22 @@ function applyLiveState(state){
     busState  = 'at';
   }
 
-  renderWindow();
-  updateCards(busState === 'moving' ? pendingIdx : curIdx);
+  try {
+    renderWindow();
+    updateCards(busState === 'moving' ? pendingIdx : curIdx);
+  } catch(err){
+    console.error('applyLiveState render failed:', err);
+    return;
+  }
+
+  /* Mark success only after rendering completes without error */
+  liveEverLive = true;
+  document.getElementById('app').classList.add('live-active');
 
   /* ISSUE 2: live ETA overrides demo timetable */
   var etaEl = document.getElementById('eta-n');
   if(etaEl) etaEl.textContent = (state.etaMinutes == null ? '—' : state.etaMinutes);
-  var e1 = document.getElementById('cur-time');
   var e2 = document.getElementById('nxt-time');
-  if(e1) e1.textContent = '';
   if(e2){
     if(state.etaMinutes != null){
       var arr = new Date(Date.now() + state.etaMinutes * 60000);
@@ -489,6 +499,7 @@ function startLiveMode(){
       setLiveStatus('offline');
       demoFallbackActive = true;
       isLiveMode = false;
+      document.getElementById('app').classList.remove('live-active');
       ensureBus(); runCycle();
     }
   }, grace);

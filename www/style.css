@@ -186,7 +186,8 @@ html,body{
 #eta-ur{font-family:'Noto Nastaliq Urdu',serif; font-size:var(--eta-ur-fs); color:var(--or); line-height:1.8;}
 
 /* ══════════ ROUTE PROGRESS ══════════ */
-#prog-sec{flex:1; min-height:0; display:flex; flex-direction:column; padding:clamp(4px, 0.74vh, 8px) clamp(8px, 1.46vw, 28px) clamp(4px, 0.93vh, 10px); background:#FAFAFA;}
+#prog-sec{flex:1; min-height:0; display:flex; flex-direction:column; padding:clamp(4px, 0.74vh, 8px) clamp(8px, 1.46vw, 28px) clamp(4px, 0.93vh, 10px); background:#FAFAFA; position:relative;}
+#app.live-active #cur-time{display:none;}
 .sec-row{flex-shrink:0; display:flex; align-items:center; justify-content:space-between; margin-bottom:clamp(3px, 0.56vh, 8px); gap:clamp(6px, 0.73vw, 14px);}
 .sec-en{font-size:var(--sec-en-fs); font-weight:900; letter-spacing:clamp(0.5px, 0.1vw, 2px); text-transform:uppercase; color:var(--or3); white-space:nowrap;}
 .sec-ur{font-family:'Noto Nastaliq Urdu',serif; font-size:var(--sec-ur-fs); font-weight:900; color:var(--or3); direction:rtl; white-space:nowrap; line-height:1.8;}
@@ -442,9 +443,35 @@ html,body{
    so they don't overflow on 1920×540 etc.
 ═══════════════════════════════════════════════════════════ */
 @media (max-height:600px){
+  :root{
+    --hdr-h:       clamp(36px, 8vh, 70px);
+    --logo-h:      clamp(20px, 5vh, 40px);
+    --divider-h:   clamp(22px, 5vh, 40px);
+    --badge-h:     clamp(16px, 3.6vh, 32px);
+    --badge-mb:    clamp(2px, 0.6vh, 6px);
+    --badge-fs:    clamp(8px, 1.8vh, 14px);
+    --circle-sz:   clamp(24px, 5.6vh, 50px);
+    --circle-cur:  clamp(30px, 7vh, 62px);
+    --circle-nxt1: clamp(28px, 6.4vh, 56px);
+    --circle-dest: clamp(26px, 6vh, 52px);
+    --circle-mov:  clamp(28px, 6.4vh, 56px);
+    --stop-num-fs: clamp(10px, 2.4vh, 20px);
+    --rn-en-fs:    clamp(8px, 1.8vh, 14px);
+    --rn-ur-fs:    clamp(8px, 1.6vh, 13px);
+    --sec-en-fs:   clamp(9px, 2vh, 16px);
+    --sec-ur-fs:   clamp(8px, 1.8vh, 14px);
+    --banner-fs:   clamp(9px, 2vh, 16px);
+    --bus-w:       clamp(36px, 8vh, 70px);
+    --bus-h:       clamp(18px, 4vh, 34px);
+    --ticker-h:    clamp(28px, 6vh, 52px);
+  }
   .sname-en{font-size:clamp(14px, 3.2vh, 30px);}
   .sname-ur{font-size:clamp(11px, 2.4vh, 20px);}
-  #srow{min-height:clamp(100px, 22vh, 200px);}
+  #srow{min-height:clamp(80px, 18vh, 160px);}
+  .rn-en,.rn-ur{
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    overflow:hidden; text-overflow:ellipsis;
+  }
 }
 
 
@@ -480,11 +507,15 @@ html,body{
    Further font and layout compaction.
 ═══════════════════════════════════════════════════════════ */
 @media (max-width:480px){
-  .hdr-en{font-size:clamp(10px, 2.8vw, 15px);}
+  #hdr{height:auto; min-height:40px; flex-wrap:wrap; padding:clamp(4px, 1vw, 8px) clamp(6px, 2vw, 12px);}
+  .hdr-logos{order:0; flex-shrink:0;}
+  .hdr-logos .hdr-logo{height:clamp(20px, 5.5vw, 32px);}
+  .hdr-clock{order:1; flex-shrink:0;}
+  .hdr-mid{order:2; flex-basis:100%; text-align:center; padding:clamp(2px, 0.5vw, 4px) 0 0;}
+  .hdr-en{font-size:clamp(10px, 2.8vw, 15px); flex-wrap:wrap;}
   .hdr-en img{height:clamp(16px, 4.5vw, 26px);}
   .hdr-ur{font-size:clamp(10px, 2.8vw, 14px); gap:clamp(6px, 2vw, 12px);}
   #clock{font-size:clamp(14px, 4.5vw, 22px);}
   #cdate{font-size:clamp(8px, 2.3vw, 12px);}
-  /* Hide divider on very narrow phones */
   .hdr-divider{display:none;}
 }
