@@ -506,15 +506,46 @@ function startLiveMode(){
 }
 
 /* ════════════════════════════════════════
+   GPS MODE placeholder — Part 2+ will add gpsTracker.js
+════════════════════════════════════════ */
+function startGpsMode(){
+  var missing = CONFIG.stops.some(function(s){ return s.lat == null || s.lng == null; });
+  if(missing){
+    console.warn('GPS mode: one or more stops have no coordinates. Open Settings to add them.');
+    var notice = document.createElement('div');
+    notice.id = 'gps-notice';
+    notice.style.cssText =
+      'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;'+
+      'background:#FFF3E8;border:3px solid #E8620A;border-radius:16px;padding:24px 32px;'+
+      'text-align:center;font:700 18px/1.5 Inter,Arial,sans-serif;color:#B54800;'+
+      'max-width:90vw;box-shadow:0 4px 24px rgba(0,0,0,.2);';
+    notice.innerHTML =
+      '⚠ GPS Mode: station coordinates missing<br>'+
+      '<span style="font-size:14px;font-weight:400;color:#666;">'+
+      'Open <a href="settings.html" style="color:#E8620A;font-weight:700;">Settings</a> '+
+      'and add lat/lng for each stop, or use "📍 Use my location" while at each station.</span>';
+    document.body.appendChild(notice);
+  }
+  ensureBus();
+  runCycle();
+}
+
+/* ════════════════════════════════════════
    BOOT
 ════════════════════════════════════════ */
+function resolveMode(cfg){
+  if(cfg.mode === 'gps' || cfg.mode === 'backend') return cfg.mode;
+  if(cfg.mode === 'demo') return 'demo';
+  if(cfg.backend && cfg.backend.enabled) return 'backend';
+  return 'demo';
+}
+
 async function boot(){
   CONFIG = await loadConfig();
 
   ALL_STOPS = CONFIG.stops;
   N_STOPS   = ALL_STOPS.length;
   route     = [...ALL_STOPS];
-  /* Responsive: adapt visible station count to available width */
   WIN       = calcAdaptiveWin();
 
   applyColors();
@@ -525,13 +556,16 @@ async function boot(){
   tickClock();
   setInterval(tickClock,1000);
 
-  /* Live backend when configured and the adapter is present; otherwise the
-     original local simulation (demo mode). */
-  if(CONFIG.backend && CONFIG.backend.enabled && window.MetroLiveFeed){
-    setTimeout(startLiveMode, 400);
-  } else {
-    setTimeout(()=>{ensureBus();runCycle();},400);
-  }
+  var mode = resolveMode(CONFIG);
+  setTimeout(function(){
+    if(mode === 'backend' && window.MetroLiveFeed){
+      startLiveMode();
+    } else if(mode === 'gps'){
+      startGpsMode();
+    } else {
+      ensureBus(); runCycle();
+    }
+  }, 400);
 }
 
 document.addEventListener('DOMContentLoaded', boot);

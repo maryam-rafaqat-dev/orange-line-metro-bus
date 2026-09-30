@@ -1,4 +1,16 @@
 {
+  "mode": "demo",
+
+  "gps": {
+    "arriveRadiusM": 50,
+    "departRadiusM": 80,
+    "avgSpeedKmh": 25,
+    "maxSpeedKmh": 120,
+    "minAccuracyM": 100,
+    "simulate": false,
+    "simulateSpeedKmh": 30
+  },
+
   "backend": {
     "enabled": false,
     "apiBaseUrl": "http://localhost:8086",
@@ -40,13 +52,13 @@
   },
 
   "stops": [
-    { "en": "Faiz Ahmed Faiz Station",         "ur": "فیض احمد فیض اسٹیشن" },
-    { "en": "NHA Station",                     "ur": "این ایچ اے اسٹیشن" },
-    { "en": "G-10 Station",                    "ur": "جی ٹین اسٹیشن" },
-    { "en": "Police Foundation",               "ur": "پولیس فاؤنڈیشن" },
-    { "en": "NUST Station",                    "ur": "نسٹ اسٹیشن" },
-    { "en": "Golra Morr",                      "ur": "گولڑہ موڑ" },
-    { "en": "Islamabad International Airport", "ur": "اسلام آباد انٹرنیشنل ایئرپورٹ" }
+    { "en": "Faiz Ahmed Faiz Station",         "ur": "فیض احمد فیض اسٹیشن",          "lat": null, "lng": null },
+    { "en": "NHA Station",                     "ur": "این ایچ اے اسٹیشن",             "lat": null, "lng": null },
+    { "en": "G-10 Station",                    "ur": "جی ٹین اسٹیشن",                 "lat": null, "lng": null },
+    { "en": "Police Foundation",               "ur": "پولیس فاؤنڈیشن",                 "lat": null, "lng": null },
+    { "en": "NUST Station",                    "ur": "نسٹ اسٹیشن",                    "lat": null, "lng": null },
+    { "en": "Golra Morr",                      "ur": "گولڑہ موڑ",                      "lat": null, "lng": null },
+    { "en": "Islamabad International Airport", "ur": "اسلام آباد انٹرنیشنل ایئرپورٹ",  "lat": null, "lng": null }
   ],
 
   "ticker": [

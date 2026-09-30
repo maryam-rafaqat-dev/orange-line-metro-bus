@@ -29,6 +29,10 @@
   .toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;}
   .toast.show{opacity:1;}
   .hint{font-size:12px;color:#999;margin-top:-6px;margin-bottom:8px;}
+  select{width:100%;padding:10px;border:1px solid #DDD;border-radius:8px;font-size:14px;background:#fff;}
+  .loc-btn{background:#E8620A;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;margin-top:4px;}
+  .loc-btn:disabled{opacity:.5;cursor:default;}
+  .coord-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;}
   .token-wrap{position:relative;}
   .token-toggle{position:absolute;right:8px;top:8px;background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;}
 </style>
@@ -41,6 +45,59 @@
 </header>
 
 <div class="wrap">
+
+  <section>
+    <h2>Mode</h2>
+    <label>Display Mode</label>
+    <select id="cfg-mode">
+      <option value="demo">Demo (timetable simulation)</option>
+      <option value="gps">GPS (real tablet location)</option>
+      <option value="backend">Backend (fleet server)</option>
+    </select>
+    <div class="hint">Demo = offline simulation, GPS = uses tablet GPS, Backend = fleet management server</div>
+  </section>
+
+  <section id="sec-gps">
+    <h2>GPS Settings</h2>
+    <div class="row2">
+      <div>
+        <label>Arrive radius (metres)</label>
+        <input type="number" id="cfg-arriveRadiusM" min="10" max="500">
+        <div class="hint">Bus is "at" a stop within this distance</div>
+      </div>
+      <div>
+        <label>Depart radius (metres)</label>
+        <input type="number" id="cfg-departRadiusM" min="20" max="600">
+        <div class="hint">Bus has "left" once beyond this distance</div>
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <label>Average speed (km/h)</label>
+        <input type="number" id="cfg-avgSpeedKmh" min="5" max="80">
+        <div class="hint">Used for ETA when GPS speed is too low</div>
+      </div>
+      <div>
+        <label>Max speed (km/h)</label>
+        <input type="number" id="cfg-maxSpeedKmh" min="50" max="200">
+        <div class="hint">GPS fixes implying faster speed are ignored</div>
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <label>Min accuracy (metres)</label>
+        <input type="number" id="cfg-minAccuracyM" min="10" max="500">
+        <div class="hint">Fixes worse than this are ignored</div>
+      </div>
+      <div>
+        <label>Simulate speed (km/h)</label>
+        <input type="number" id="cfg-simulateSpeedKmh" min="5" max="120">
+      </div>
+    </div>
+    <div class="fare-check">
+      <input type="checkbox" id="cfg-gpsSimulate"> Enable GPS simulator (fake positions along the route)
+    </div>
+  </section>
 
   <section>
     <h2>Header / Title</h2>
@@ -166,10 +223,33 @@ function toggleTokenVisibility(){
   document.getElementById('token-toggle').textContent = el.type === 'password' ? '👁' : '🔒';
 }
 
+function updateSectionVisibility(){
+  var mode = document.getElementById('cfg-mode').value;
+  document.getElementById('sec-gps').style.display = (mode === 'gps') ? '' : 'none';
+}
+
 function render(){
+  /* Mode */
+  var modeEl = document.getElementById('cfg-mode');
+  var mode = cfg.mode || 'demo';
+  if(!cfg.mode && cfg.backend && cfg.backend.enabled) mode = 'backend';
+  modeEl.value = mode;
+  updateSectionVisibility();
+  modeEl.onchange = updateSectionVisibility;
+
   document.getElementById('cfg-titleEn').value = cfg.header.titleEn;
   document.getElementById('cfg-routeFromUr').value = cfg.header.routeFromUr;
   document.getElementById('cfg-routeToUr').value = cfg.header.routeToUr;
+
+  /* GPS fields */
+  var g = cfg.gps || {};
+  document.getElementById('cfg-arriveRadiusM').value = g.arriveRadiusM || 50;
+  document.getElementById('cfg-departRadiusM').value = g.departRadiusM || 80;
+  document.getElementById('cfg-avgSpeedKmh').value = g.avgSpeedKmh || 25;
+  document.getElementById('cfg-maxSpeedKmh').value = g.maxSpeedKmh || 120;
+  document.getElementById('cfg-minAccuracyM').value = g.minAccuracyM || 100;
+  document.getElementById('cfg-simulateSpeedKmh').value = g.simulateSpeedKmh || 30;
+  document.getElementById('cfg-gpsSimulate').checked = !!g.simulate;
 
   document.getElementById('cfg-minPerStop').value = cfg.timing.minPerStop;
   document.getElementById('cfg-slideToNext').value = cfg.timing.slideToNext;
@@ -197,12 +277,21 @@ function render(){
   cfg.stops.forEach(function(s,i){
     var div = document.createElement('div');
     div.className = 'item';
+    var latVal = (s.lat != null) ? s.lat : '';
+    var lngVal = (s.lng != null) ? s.lng : '';
     div.innerHTML =
       '<button class="del" onclick="removeStop('+i+')">&#10005;</button>'+
       '<label>Stop '+(i+1)+' — English Name</label>'+
       '<input type="text" value="'+escapeAttr(s.en)+'" onchange="cfg.stops['+i+'].en=this.value">'+
       '<label>Stop '+(i+1)+' — Urdu Name</label>'+
-      '<input type="text" dir="rtl" value="'+escapeAttr(s.ur)+'" onchange="cfg.stops['+i+'].ur=this.value">';
+      '<input type="text" dir="rtl" value="'+escapeAttr(s.ur)+'" onchange="cfg.stops['+i+'].ur=this.value">'+
+      '<div class="coord-row">'+
+        '<div><label>Latitude</label><input type="text" id="stop-lat-'+i+'" value="'+escapeAttr(latVal)+'" '+
+          'onchange="cfg.stops['+i+'].lat=this.value?parseFloat(this.value):null" placeholder="e.g. 33.6844"></div>'+
+        '<div><label>Longitude</label><input type="text" id="stop-lng-'+i+'" value="'+escapeAttr(lngVal)+'" '+
+          'onchange="cfg.stops['+i+'].lng=this.value?parseFloat(this.value):null" placeholder="e.g. 73.0479"></div>'+
+        '<button class="loc-btn" onclick="captureLocation('+i+')">&#128205; Use my location</button>'+
+      '</div>';
     stopsList.appendChild(div);
   });
 
@@ -231,7 +320,7 @@ function escapeAttr(s){
 }
 
 function addStop(){
-  cfg.stops.push({en:'New Station', ur:'نیا اسٹیشن'});
+  cfg.stops.push({en:'New Station', ur:'نیا اسٹیشن', lat:null, lng:null});
   render();
 }
 function removeStop(i){
@@ -248,10 +337,47 @@ function removeTicker(i){
   render();
 }
 
+function captureLocation(stopIndex){
+  if(!navigator.geolocation){ showToast('Geolocation not available'); return; }
+  var btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Getting...';
+  navigator.geolocation.getCurrentPosition(
+    function(pos){
+      var lat = Math.round(pos.coords.latitude * 1000000) / 1000000;
+      var lng = Math.round(pos.coords.longitude * 1000000) / 1000000;
+      cfg.stops[stopIndex].lat = lat;
+      cfg.stops[stopIndex].lng = lng;
+      document.getElementById('stop-lat-' + stopIndex).value = lat;
+      document.getElementById('stop-lng-' + stopIndex).value = lng;
+      btn.disabled = false;
+      btn.textContent = '📍 Use my location';
+      showToast('📍 Stop ' + (stopIndex+1) + ': ' + lat + ', ' + lng);
+    },
+    function(err){
+      btn.disabled = false;
+      btn.textContent = '📍 Use my location';
+      showToast('❌ Location error: ' + err.message);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
 function collectFormValues(){
+  cfg.mode = document.getElementById('cfg-mode').value;
+
   cfg.header.titleEn     = document.getElementById('cfg-titleEn').value;
   cfg.header.routeFromUr = document.getElementById('cfg-routeFromUr').value;
   cfg.header.routeToUr   = document.getElementById('cfg-routeToUr').value;
+
+  if(!cfg.gps) cfg.gps = {};
+  cfg.gps.arriveRadiusM    = Number(document.getElementById('cfg-arriveRadiusM').value) || 50;
+  cfg.gps.departRadiusM    = Number(document.getElementById('cfg-departRadiusM').value) || 80;
+  cfg.gps.avgSpeedKmh      = Number(document.getElementById('cfg-avgSpeedKmh').value) || 25;
+  cfg.gps.maxSpeedKmh      = Number(document.getElementById('cfg-maxSpeedKmh').value) || 120;
+  cfg.gps.minAccuracyM     = Number(document.getElementById('cfg-minAccuracyM').value) || 100;
+  cfg.gps.simulateSpeedKmh = Number(document.getElementById('cfg-simulateSpeedKmh').value) || 30;
+  cfg.gps.simulate         = document.getElementById('cfg-gpsSimulate').checked;
 
   cfg.timing.minPerStop    = Number(document.getElementById('cfg-minPerStop').value) || 5;
   cfg.timing.slideToNext   = Number(document.getElementById('cfg-slideToNext').value) || 1500;
