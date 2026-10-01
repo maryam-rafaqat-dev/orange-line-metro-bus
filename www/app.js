@@ -506,28 +506,113 @@ function startLiveMode(){
 }
 
 /* ════════════════════════════════════════
-   GPS MODE placeholder — Part 2+ will add gpsTracker.js
+   GPS MODE — reads tablet GPS via geoProvider.js
+   Part 3 will add gpsTracker.js for stop detection / direction / ETA.
+   For now this starts the watch, shows the badge and logs fixes.
 ════════════════════════════════════════ */
-function startGpsMode(){
-  var missing = CONFIG.stops.some(function(s){ return s.lat == null || s.lng == null; });
-  if(missing){
-    console.warn('GPS mode: one or more stops have no coordinates. Open Settings to add them.');
-    var notice = document.createElement('div');
-    notice.id = 'gps-notice';
-    notice.style.cssText =
+var _gpsActive = false;
+
+function showGpsNotice(html){
+  var el = document.getElementById('gps-notice');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'gps-notice';
+    el.style.cssText =
       'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;'+
       'background:#FFF3E8;border:3px solid #E8620A;border-radius:16px;padding:24px 32px;'+
       'text-align:center;font:700 18px/1.5 Inter,Arial,sans-serif;color:#B54800;'+
       'max-width:90vw;box-shadow:0 4px 24px rgba(0,0,0,.2);';
-    notice.innerHTML =
-      '⚠ GPS Mode: station coordinates missing<br>'+
+    document.body.appendChild(el);
+  }
+  el.innerHTML = html;
+  el.style.display = '';
+}
+
+function hideGpsNotice(){
+  var el = document.getElementById('gps-notice');
+  if(el) el.style.display = 'none';
+}
+
+function ensureGpsBadge(){
+  var el = document.getElementById('gps-badge');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'gps-badge';
+    el.style.cssText =
+      'position:absolute;left:10px;top:2px;z-index:9999;padding:4px 10px;'+
+      'border-radius:12px;font:600 12px/1 Arial,sans-serif;color:#fff;'+
+      'letter-spacing:.5px;opacity:.85;transition:background .3s;';
+    var sec = document.getElementById('prog-sec');
+    if(sec) sec.appendChild(el);
+    else document.body.appendChild(el);
+  }
+  return el;
+}
+
+function setGpsStatus(status){
+  var el = ensureGpsBadge();
+  var map = {
+    searching: ['GPS SEARCHING', '#6B7280'],
+    ok:        ['GPS OK',        '#16A34A'],
+    weak:      ['GPS WEAK',      '#B54800'],
+    nofix:     ['NO FIX',        '#CC1000'],
+    denied:    ['GPS DENIED',    '#CC1000'],
+    unsupported:['NO GPS',       '#CC1000']
+  };
+  var entry = map[status] || map.nofix;
+  el.textContent = entry[0];
+  el.style.background = entry[1];
+
+  if(status === 'denied'){
+    showGpsNotice(
+      '&#128683; Location permission denied<br>'+
+      '<span style="font-size:14px;font-weight:400;color:#666;">'+
+      'This app needs GPS access to track the bus position.<br>'+
+      'Please allow location access in your browser or device settings, then reload.</span>');
+  } else if(status === 'unsupported'){
+    showGpsNotice(
+      '&#9888; Geolocation not available<br>'+
+      '<span style="font-size:14px;font-weight:400;color:#666;">'+
+      'This device or browser does not support GPS.</span>');
+  }
+}
+
+function onGpsFix(fix){
+  /* Part 3 will feed this into gpsTracker for stop detection.
+     For now just log it so we can verify GPS is working. */
+  console.log('GPS fix:', fix.lat.toFixed(6), fix.lng.toFixed(6),
+    'acc=' + (fix.accuracy ? fix.accuracy.toFixed(1) : '?') + 'm',
+    'spd=' + (fix.speed != null ? (fix.speed * 3.6).toFixed(1) + 'km/h' : '?'));
+}
+
+async function startGpsMode(){
+  var missing = CONFIG.stops.some(function(s){ return s.lat == null || s.lng == null; });
+  if(missing){
+    console.warn('GPS mode: one or more stops have no coordinates.');
+    showGpsNotice(
+      '&#9888; GPS Mode: station coordinates missing<br>'+
       '<span style="font-size:14px;font-weight:400;color:#666;">'+
       'Open <a href="settings.html" style="color:#E8620A;font-weight:700;">Settings</a> '+
-      'and add lat/lng for each stop, or use "📍 Use my location" while at each station.</span>';
-    document.body.appendChild(notice);
+      'and add lat/lng for each stop, or use "&#128205; Use my location" at each station.</span>');
   }
+
   ensureBus();
   runCycle();
+
+  if(!window.GeoProvider){
+    setGpsStatus('unsupported');
+    return;
+  }
+
+  var granted = await GeoProvider.requestPermission();
+  if(!granted){
+    setGpsStatus('denied');
+    return;
+  }
+
+  _gpsActive = true;
+  var minAcc = (CONFIG.gps && CONFIG.gps.minAccuracyM) || 100;
+  GeoProvider.startWatch(onGpsFix, setGpsStatus, minAcc);
 }
 
 /* ════════════════════════════════════════
