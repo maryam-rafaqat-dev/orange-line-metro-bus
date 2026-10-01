@@ -28,11 +28,12 @@ function handleResize(){
     requestAnimationFrame(function(){
       requestAnimationFrame(function(){
         /* ISSUE 5: midway bus on resize when live-moving */
-        if(isLiveMode && busState === 'moving' && pendingIdx >= 0){
+        if((isLiveMode || isGpsMode) && busState === 'moving' && pendingIdx >= 0){
           var from = circleCentre(curIdx);
           var to = circleCentre(pendingIdx);
           if(from && to){
-            snapBus((from.x + to.x) / 2, (from.y + to.y) / 2);
+            var t = isGpsMode ? _lastGpsProgress : 0.5;
+            snapBus(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
             return;
           }
         }
@@ -50,6 +51,7 @@ window.addEventListener('orientationchange', function(){ setTimeout(handleResize
 let ALL_STOPS, WIN, N_STOPS;
 let route, curIdx=0, dir='fwd', winStart=0, busState='at', pendingIdx=-1, tripCount=0;
 var isLiveMode = false;
+var isGpsMode = false;
 var _demoTimers = [];
 var demoFallbackActive = false;
 
@@ -183,7 +185,7 @@ function renderWindow(){
 
     /* ISSUE 2: live mode shows status markers, demo shows timetable times */
     let topBadge;
-    if(isLiveMode){
+    if(isLiveMode || isGpsMode){
       if(gi<curIdx){
         topBadge='<div class="rn-eta rn-eta-done">✓</div>';
       } else if(gi===curIdx && busState==='at'){
@@ -255,8 +257,7 @@ function updateCards(idx){
   document.getElementById('nxt-ur').textContent=nxt?nxt.ur:'';
   document.getElementById('dir-arrow').textContent='▶';
 
-  /* ISSUE 2: only set demo timetable times when not in live mode */
-  if(!isLiveMode){
+  if(!isLiveMode && !isGpsMode){
     document.getElementById('eta-n').textContent=nxt?CONFIG.timing.minPerStop:'—';
     const e1=document.getElementById('cur-time');
     const e2=document.getElementById('nxt-time');
@@ -507,10 +508,13 @@ function startLiveMode(){
 
 /* ════════════════════════════════════════
    GPS MODE — reads tablet GPS via geoProvider.js
-   Part 3 will add gpsTracker.js for stop detection / direction / ETA.
-   For now this starts the watch, shows the badge and logs fixes.
+   Uses gpsTracker.js for stop detection, direction, and segment progress.
+   Optional GPS simulator (gps.simulate) for browser testing.
 ════════════════════════════════════════ */
 var _gpsActive = false;
+var _gpsTracker = null;
+var _gpsSimulator = null;
+var _lastGpsProgress = 0;
 
 function showGpsNotice(html){
   var el = document.getElementById('gps-notice');
@@ -577,27 +581,104 @@ function setGpsStatus(status){
   }
 }
 
-function onGpsFix(fix){
-  /* Part 3 will feed this into gpsTracker for stop detection.
-     For now just log it so we can verify GPS is working. */
-  console.log('GPS fix:', fix.lat.toFixed(6), fix.lng.toFixed(6),
-    'acc=' + (fix.accuracy ? fix.accuracy.toFixed(1) : '?') + 'm',
-    'spd=' + (fix.speed != null ? (fix.speed * 3.6).toFixed(1) + 'km/h' : '?'));
+function applyGpsState(state){
+  isGpsMode = true;
+
+  dir = state.direction;
+  route = state.stops.map(function(s){ return { en: s.en, ur: s.ur || '' }; });
+  ALL_STOPS = dir === 'rev' ? route.slice().reverse() : route.slice();
+
+  var prevN = N_STOPS;
+  N_STOPS = route.length;
+  if(N_STOPS !== prevN) WIN = calcAdaptiveWin();
+
+  if(state.moving && state.nextIndex != null){
+    curIdx     = state.atIndex;
+    pendingIdx = state.nextIndex;
+    busState   = 'moving';
+  } else {
+    curIdx     = state.atIndex;
+    pendingIdx = -1;
+    busState   = 'at';
+  }
+
+  _lastGpsProgress = state.progress || 0;
+
+  renderWindow();
+  updateCards(busState === 'moving' ? pendingIdx : curIdx);
+
+  document.getElementById('app').classList.add('gps-active');
+
+  var etaEl = document.getElementById('eta-n');
+  if(etaEl) etaEl.textContent = '—';
+  var e2 = document.getElementById('nxt-time');
+  if(e2) e2.textContent = '';
+
+  placeGpsBus(_lastGpsProgress);
+}
+
+function placeGpsBus(progress){
+  requestAnimationFrame(function(){
+    if(busState === 'moving' && pendingIdx >= 0){
+      var from = circleCentre(curIdx);
+      var to = circleCentre(pendingIdx);
+      if(from && to){
+        var x = from.x + (to.x - from.x) * progress;
+        var y = from.y + (to.y - from.y) * progress;
+        slideBus(x, y, 500);
+        return;
+      }
+    }
+    var c = circleCentre(curIdx);
+    if(c) slideBus(c.x, c.y, 500);
+  });
 }
 
 async function startGpsMode(){
+  var g = CONFIG.gps || {};
+  var simulate = !!g.simulate;
   var missing = CONFIG.stops.some(function(s){ return s.lat == null || s.lng == null; });
-  if(missing){
+
+  if(missing && !simulate){
     console.warn('GPS mode: one or more stops have no coordinates.');
     showGpsNotice(
       '&#9888; GPS Mode: station coordinates missing<br>'+
       '<span style="font-size:14px;font-weight:400;color:#666;">'+
       'Open <a href="settings.html" style="color:#E8620A;font-weight:700;">Settings</a> '+
-      'and add lat/lng for each stop, or use "&#128205; Use my location" at each station.</span>');
+      'and add lat/lng for each stop, or enable the GPS simulator.</span>');
   }
 
   ensureBus();
-  runCycle();
+
+  _gpsTracker = GpsTracker.create({
+    stops: CONFIG.stops,
+    arriveRadiusM: g.arriveRadiusM || 50,
+    departRadiusM: g.departRadiusM || 80,
+    maxSpeedKmh:   g.maxSpeedKmh || 120,
+    onState:       applyGpsState
+  });
+
+  if(simulate){
+    hideGpsNotice();
+    setGpsStatus('ok');
+    ensureGpsBadge().textContent = 'GPS SIM';
+    _gpsSimulator = GpsTracker.createSimulator({
+      stops: CONFIG.stops,
+      speedKmh: g.simulateSpeedKmh || 30,
+      dwellMs:  3000,
+      tickMs:   1000,
+      onFix: function(fix){ _gpsTracker.feed(fix); }
+    });
+    _gpsSimulator.start();
+    return;
+  }
+
+  renderWindow();
+  updateCards(0);
+  requestAnimationFrame(function(){
+    var pos = circleCentre(0);
+    if(pos) snapBus(pos.x, pos.y);
+  });
 
   if(!window.GeoProvider){
     setGpsStatus('unsupported');
@@ -611,8 +692,12 @@ async function startGpsMode(){
   }
 
   _gpsActive = true;
-  var minAcc = (CONFIG.gps && CONFIG.gps.minAccuracyM) || 100;
-  GeoProvider.startWatch(onGpsFix, setGpsStatus, minAcc);
+  var minAcc = g.minAccuracyM || 100;
+  GeoProvider.startWatch(
+    function(fix){ _gpsTracker.feed(fix); },
+    setGpsStatus,
+    minAcc
+  );
 }
 
 /* ════════════════════════════════════════

@@ -188,6 +188,7 @@ html,body{
 /* ══════════ ROUTE PROGRESS ══════════ */
 #prog-sec{flex:1; min-height:0; display:flex; flex-direction:column; padding:clamp(4px, 0.74vh, 8px) clamp(8px, 1.46vw, 28px) clamp(4px, 0.93vh, 10px); background:#FAFAFA; position:relative;}
 #app.live-active #cur-time{display:none;}
+#app.gps-active #cur-time{display:none;}
 .sec-row{flex-shrink:0; display:flex; align-items:center; justify-content:space-between; margin-bottom:clamp(3px, 0.56vh, 8px); gap:clamp(6px, 0.73vw, 14px);}
 .sec-en{font-size:var(--sec-en-fs); font-weight:900; letter-spacing:clamp(0.5px, 0.1vw, 2px); text-transform:uppercase; color:var(--or3); white-space:nowrap;}
 .sec-ur{font-family:'Noto Nastaliq Urdu',serif; font-size:var(--sec-ur-fs); font-weight:900; color:var(--or3); direction:rtl; white-space:nowrap; line-height:1.8;}
