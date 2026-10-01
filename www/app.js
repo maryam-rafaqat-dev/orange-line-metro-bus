@@ -238,12 +238,17 @@ function renderWindow(){
 
   const banner=document.getElementById('dir-banner');
   if(banner){
-    const ref=busState==='moving'?pendingIdx:curIdx;
-    const from=dir==='fwd' ? ALL_STOPS[0].en : ALL_STOPS[ALL_STOPS.length-1].en;
-    const to=dir==='fwd'   ? ALL_STOPS[ALL_STOPS.length-1].en : ALL_STOPS[0].en;
-    banner.innerHTML=
-      `<span class="banner-txt">${from} → ${to} &nbsp;(Stop ${ref+1} / ${route.length})</span>`;
-    banner.style.color=dir==='fwd'?'var(--or3)':'var(--bl)';
+    if(isGpsMode && !_gpsDirKnown){
+      banner.innerHTML='<span class="banner-txt" style="color:#6B7280">Detecting direction… / سمت معلوم کی جا رہی ہے</span>';
+      banner.style.color='#6B7280';
+    } else {
+      const ref=busState==='moving'?pendingIdx:curIdx;
+      const from=dir==='fwd' ? ALL_STOPS[0].en : ALL_STOPS[ALL_STOPS.length-1].en;
+      const to=dir==='fwd'   ? ALL_STOPS[ALL_STOPS.length-1].en : ALL_STOPS[0].en;
+      banner.innerHTML=
+        `<span class="banner-txt">${from} → ${to} &nbsp;(Stop ${ref+1} / ${route.length})</span>`;
+      banner.style.color=dir==='fwd'?'var(--or3)':'var(--bl)';
+    }
   }
 }
 
@@ -515,6 +520,7 @@ var _gpsActive = false;
 var _gpsTracker = null;
 var _gpsSimulator = null;
 var _lastGpsProgress = 0;
+var _gpsDirKnown = false;
 
 function showGpsNotice(html){
   var el = document.getElementById('gps-notice');
@@ -603,6 +609,7 @@ function applyGpsState(state){
   }
 
   _lastGpsProgress = state.progress || 0;
+  _gpsDirKnown = state.directionKnown;
 
   renderWindow();
   updateCards(busState === 'moving' ? pendingIdx : curIdx);
@@ -650,8 +657,11 @@ async function startGpsMode(){
 
   ensureBus();
 
+  var trackerStops = CONFIG.stops;
+  if(simulate) trackerStops = GpsTracker.resolveStops(CONFIG.stops);
+
   _gpsTracker = GpsTracker.create({
-    stops: CONFIG.stops,
+    stops: trackerStops,
     arriveRadiusM: g.arriveRadiusM || 50,
     departRadiusM: g.departRadiusM || 80,
     maxSpeedKmh:   g.maxSpeedKmh || 120,
@@ -662,8 +672,20 @@ async function startGpsMode(){
     hideGpsNotice();
     setGpsStatus('ok');
     ensureGpsBadge().textContent = 'GPS SIM';
+    var anyTest = CONFIG.stops.some(function(s){ return s.lat == null || s.lng == null; });
+    if(anyTest){
+      var tcBadge = document.createElement('div');
+      tcBadge.id = 'test-coords-badge';
+      tcBadge.style.cssText =
+        'position:absolute;right:10px;top:2px;z-index:9999;padding:4px 10px;'+
+        'border-radius:12px;font:600 11px/1 Arial,sans-serif;color:#fff;'+
+        'background:#B54800;letter-spacing:.5px;opacity:.85;';
+      tcBadge.textContent = 'TEST COORDS';
+      var sec = document.getElementById('prog-sec');
+      if(sec) sec.appendChild(tcBadge);
+    }
     _gpsSimulator = GpsTracker.createSimulator({
-      stops: CONFIG.stops,
+      stops: trackerStops,
       speedKmh: g.simulateSpeedKmh || 30,
       dwellMs:  3000,
       tickMs:   1000,

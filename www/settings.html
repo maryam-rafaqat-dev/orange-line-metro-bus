@@ -97,8 +97,6 @@
     <div class="fare-check">
       <input type="checkbox" id="cfg-gpsSimulate"> Enable GPS simulator (fake positions along the route)
     </div>
-    <button class="add-btn" style="background:#FFF0E0;margin-top:12px;" onclick="fillTestCoords()">&#128506; Fill TEST coordinates (simulator testing only)</button>
-    <div class="hint" style="margin-top:4px;">Fills lat/lng with approximate test positions along the corridor. NOT real station coordinates — for simulator testing only.</div>
   </section>
 
   <section>
@@ -215,7 +213,6 @@
 <div class="toast" id="toast"></div>
 
 <script src="configLoader.js"></script>
-<script src="gpsTracker.js"></script>
 <script>
 /* loadConfig and CONFIG_STORAGE_KEY come from configLoader.js */
 let cfg = null;
@@ -422,21 +419,6 @@ function showToast(msg){
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(function(){ t.classList.remove('show'); }, 2600);
-}
-
-function fillTestCoords(){
-  if(!window.GpsTracker || !GpsTracker.TEST_COORDS){
-    showToast('GpsTracker not loaded'); return;
-  }
-  var tc = GpsTracker.TEST_COORDS;
-  cfg.stops.forEach(function(s, i){
-    if(i < tc.length){
-      s.lat = tc[i].lat;
-      s.lng = tc[i].lng;
-    }
-  });
-  render();
-  showToast('TEST coordinates filled — not real station positions!');
 }
 
 (async function init(){

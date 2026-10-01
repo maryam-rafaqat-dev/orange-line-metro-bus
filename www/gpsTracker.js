@@ -67,6 +67,7 @@
     var direction    = 'unknown';
     var visitHistory = [];
     var prevFix      = null;
+    var _seekDist    = Infinity;
 
     function deriveDir(){
       if(visitHistory.length < 2) return direction;
@@ -111,10 +112,34 @@
 
       if(status === 'unknown'){
         lastStopFwd = n.index;
-        visitHistory = [lastStopFwd];
-        status = n.distance <= arriveR ? 'at' : 'moving';
+        if(n.distance <= arriveR){
+          visitHistory = [lastStopFwd];
+          status = 'at';
+        } else {
+          status = 'seeking';
+          _seekDist = n.distance;
+        }
         emit(0);
         return;
+      }
+
+      if(status === 'seeking'){
+        if(n.distance <= arriveR){
+          lastStopFwd = n.index;
+          visitHistory = [lastStopFwd];
+          status = 'at';
+          emit(0);
+          return;
+        }
+        var dToTracked = haversineM(fix.lat, fix.lng,
+          stops[lastStopFwd].lat, stops[lastStopFwd].lng);
+        if(dToTracked < _seekDist){
+          _seekDist = dToTracked;
+          emit(0);
+          return;
+        }
+        visitHistory = [lastStopFwd];
+        status = 'moving';
       }
 
       if(status === 'at'){
@@ -166,7 +191,7 @@
 
     function reset(){
       status = 'unknown'; lastStopFwd = -1; direction = 'unknown';
-      visitHistory = []; prevFix = null;
+      visitHistory = []; prevFix = null; _seekDist = Infinity;
     }
 
     return {
@@ -189,6 +214,20 @@
       var base = TEST_COORDS[TEST_COORDS.length - 1];
       return { lat: base.lat - 0.01 * (i - TEST_COORDS.length + 1),
                lng: base.lng - 0.01 * (i - TEST_COORDS.length + 1) };
+    });
+  }
+
+  function resolveStops(stops){
+    return stops.map(function(s, i){
+      if(s.lat != null && s.lng != null) return s;
+      var tc = (i < TEST_COORDS.length) ? TEST_COORDS[i] :
+        { lat: TEST_COORDS[TEST_COORDS.length-1].lat - 0.01*(i-TEST_COORDS.length+1),
+          lng: TEST_COORDS[TEST_COORDS.length-1].lng - 0.01*(i-TEST_COORDS.length+1) };
+      var copy = {};
+      for(var k in s) if(s.hasOwnProperty(k)) copy[k] = s[k];
+      copy.lat = tc.lat;
+      copy.lng = tc.lng;
+      return copy;
     });
   }
 
@@ -270,6 +309,7 @@
   return {
     create:           create,
     createSimulator:  createSimulator,
+    resolveStops:     resolveStops,
     TEST_COORDS:      TEST_COORDS,
     _haversineM:      haversineM,
     _nearestStop:     nearestStop,

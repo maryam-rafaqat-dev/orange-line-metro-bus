@@ -190,6 +190,128 @@ check('project: midpoint → ~0.5', pm > 0.3 && pm < 0.7, pm.toFixed(3));
     'moving=' + midState.moving + ' progress=' + (midState.progress != null ? midState.progress.toFixed(3) : 'undef'));
 }
 
+// ═══ Start between stations (seeking state) ═══
+{
+  const states = [];
+  const tr = T.create({
+    stops, arriveRadiusM: 50, departRadiusM: 100, maxSpeedKmh: 200,
+    onState: s => states.push(JSON.parse(JSON.stringify(s)))
+  });
+
+  // 70% between stop 2 and stop 3 — nearest is stop 3, ~558m away
+  var p70 = lerp(stops[2], stops[3], 0.70);
+  tr.feed({ lat: p70.lat, lng: p70.lng, timestamp: 0 });
+  check('between: first fix between stops → seeking',
+    tr.getInternals().status === 'seeking');
+
+  // 80% — still approaching stop 3, ~372m away
+  var p80 = lerp(stops[2], stops[3], 0.80);
+  tr.feed({ lat: p80.lat, lng: p80.lng, timestamp: 30000 });
+  check('between: approaching → still seeking',
+    tr.getInternals().status === 'seeking');
+
+  // Arrive at stop 3 (exact position)
+  tr.feed({ lat: stops[3].lat, lng: stops[3].lng, timestamp: 60000 });
+  check('between: arrival at stop 3 detected',
+    tr.getInternals().status === 'at' && tr.getInternals().lastStopFwd === 3);
+
+  // Depart stop 3, travel to stop 4
+  var dp = lerp(stops[3], stops[4], 0.10);
+  tr.feed({ lat: dp.lat, lng: dp.lng, timestamp: 90000 });
+  var mp = lerp(stops[3], stops[4], 0.50);
+  tr.feed({ lat: mp.lat, lng: mp.lng, timestamp: 120000 });
+  tr.feed({ lat: stops[4].lat, lng: stops[4].lng, timestamp: 150000 });
+  var last = states[states.length - 1];
+  check('between: stop 3 → stop 4 = fwd',
+    last.atIndex === 4 && last.direction === 'fwd' && last.directionKnown);
+}
+
+// ═══ resolveStops ═══
+{
+  var nullStops2 = stops.map(function(s){ return { en: s.en, ur: s.ur, lat: null, lng: null }; });
+  var resolved = T.resolveStops(nullStops2);
+  check('resolveStops: fills null coords from TEST_COORDS',
+    resolved[0].lat === T.TEST_COORDS[0].lat && resolved[0].lng === T.TEST_COORDS[0].lng);
+  check('resolveStops: keeps en name',
+    resolved[0].en === 'S0');
+  var partialNull = stops.map(function(s, i){
+    return i === 2 ? { en: s.en, ur: s.ur, lat: null, lng: null } : s;
+  });
+  var resolved2 = T.resolveStops(partialNull);
+  check('resolveStops: only fills null, keeps real coords',
+    resolved2[0].lat === stops[0].lat && resolved2[2].lat === T.TEST_COORDS[2].lat);
+}
+
+// ═══ Full route integration (sync, 30 km/h, fake timestamps) ═══
+{
+  function genRoute(coords, speedKmh, dwellMs, tickMs, t0){
+    var fixes = [], t = t0 || 0;
+    for(var i = 0; i < coords.length; i++){
+      var dTicks = Math.max(1, Math.ceil(dwellMs / tickMs));
+      for(var d = 0; d < dTicks; d++){
+        fixes.push({ lat: coords[i].lat, lng: coords[i].lng, timestamp: t, accuracy: 5 });
+        t += tickMs;
+      }
+      if(i < coords.length - 1){
+        var dist = T._haversineM(coords[i].lat, coords[i].lng, coords[i+1].lat, coords[i+1].lng);
+        var steps = Math.max(1, Math.round((dist / (speedKmh / 3.6)) / (tickMs / 1000)));
+        for(var s = 1; s <= steps; s++){
+          var f = s / steps;
+          fixes.push({
+            lat: coords[i].lat + (coords[i+1].lat - coords[i].lat) * f,
+            lng: coords[i].lng + (coords[i+1].lng - coords[i].lng) * f,
+            timestamp: t, accuracy: 5
+          });
+          t += tickMs;
+        }
+      }
+    }
+    return { fixes: fixes, endTime: t };
+  }
+
+  var allStates = [];
+  var tr = T.create({
+    stops, arriveRadiusM: 100, departRadiusM: 200, maxSpeedKmh: 200,
+    onState: function(s){ allStates.push(JSON.parse(JSON.stringify(s))); }
+  });
+
+  var coords = stops.map(function(s){ return { lat: s.lat, lng: s.lng }; });
+  var revCoords = coords.slice().reverse();
+
+  var fwd = genRoute(coords, 30, 10000, 5000, 0);
+  var rev = genRoute(revCoords, 30, 10000, 5000, fwd.endTime);
+  var allFixes = fwd.fixes.concat(rev.fixes);
+  allFixes.forEach(function(fix){ tr.feed(fix); });
+
+  var fwdVisits = new Set();
+  var revVisits = new Set();
+  var sawFwd = false, sawRev = false, sawTerminus = false;
+
+  allStates.forEach(function(s){
+    if(s.direction === 'fwd' && s.directionKnown){ sawFwd = true; fwdVisits.add(s.atIndex); }
+    if(s.direction === 'rev' && s.directionKnown){ sawRev = true; revVisits.add(s.atIndex); }
+  });
+
+  for(var i = 0; i < allStates.length - 1; i++){
+    if(allStates[i].atIndex === 6 && !allStates[i].moving && allStates[i].direction === 'fwd'){
+      for(var j = i + 1; j < allStates.length; j++){
+        if(allStates[j].direction === 'rev' && allStates[j].directionKnown){
+          sawTerminus = true; break;
+        }
+      }
+      if(sawTerminus) break;
+    }
+  }
+
+  check('full-route: forward → visited stops (>=6 with known dir)',
+    fwdVisits.size >= 6, 'fwd stops=' + fwdVisits.size);
+  check('full-route: detected fwd direction', sawFwd);
+  check('full-route: terminus flip fwd → rev', sawTerminus);
+  check('full-route: reverse → visited stops (>=6)',
+    revVisits.size >= 6, 'rev stops=' + revVisits.size);
+  check('full-route: detected rev direction', sawRev);
+}
+
 // ═══ Simulator ═══
 {
   const fixes = [];
@@ -222,36 +344,8 @@ check('project: midpoint → ~0.5', pm > 0.3 && pm < 0.7, pm.toFixed(3));
       check('simulator null coords: uses TEST_COORDS fallback',
         fixes2.length > 0 && Math.abs(fixes2[0].lat - T.TEST_COORDS[0].lat) < 0.001);
 
-      // ═══ Full integration: simulator → tracker ═══
-      var gpsStates = [];
-      var tracker = T.create({
-        stops, arriveRadiusM: 100, departRadiusM: 200, maxSpeedKmh: 800,
-        onState: s => gpsStates.push(JSON.parse(JSON.stringify(s)))
-      });
-      var sim3 = T.createSimulator({
-        stops, speedKmh: 600, dwellMs: 100, tickMs: 50,
-        onFix: f => tracker.feed(f)
-      });
-
-      sim3.start();
-      setTimeout(() => {
-        sim3.stop();
-        check('integration: tracker received states from simulator',
-          gpsStates.length > 5, 'count=' + gpsStates.length);
-
-        check('integration: saw moving state',
-          gpsStates.some(s => s.moving));
-
-        var uniqueStops = new Set(gpsStates.map(s => s.atIndex)).size;
-        check('integration: visited multiple stops',
-          uniqueStops > 1, 'unique=' + uniqueStops);
-
-        check('integration: detected fwd direction',
-          gpsStates.some(s => s.direction === 'fwd' && s.directionKnown));
-
-        console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'));
-        process.exit(failures === 0 ? 0 : 1);
-      }, 15000);
+      console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'));
+      process.exit(failures === 0 ? 0 : 1);
     }, 500);
   }, 2000);
 }
